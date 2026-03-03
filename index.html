@@ -1093,10 +1093,10 @@ function WorkOrders({items,workOrders,setWorkOrders,geminiKey,notify,setTab}){
         <h2 style={{fontWeight:800,fontSize:22,margin:0}}>Work Orders</h2>
         <div style={{display:"flex",gap:10,alignItems:"center"}}>
           {!geminiKey&&<Btn variant="ghost" small onClick={()=>setTab("settings")}>Add API Key First</Btn>}
-          <label style={{cursor:"pointer"}}>
-            <Btn onClick={()=>{}} disabled={loading}>{loading?"Reading PDF...":"Upload Work Order PDF"}</Btn>
+          <div>
+            <Btn onClick={()=>fileRef.current&&fileRef.current.click()} disabled={loading}>{loading?"Reading PDF...":"Upload Work Order PDF"}</Btn>
             <input ref={fileRef} type="file" accept=".pdf" style={{display:"none"}} onChange={uploadPDF}/>
-          </label>
+          </div>
         </div>
       </div>
       <p style={{color:C.textMuted,fontSize:13,marginBottom:20,lineHeight:1.6}}>Upload a ServiceBridge PDF. Gemini AI reads the SKUs, compares to your inventory, and generates a purchase order by supplier.</p>
