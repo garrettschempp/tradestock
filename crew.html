@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>GutterBrothers — Job Log</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700;800&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0f1117;color:#e8eaf0;font-family:'DM Sans',system-ui,sans-serif;min-height:100vh}
+input,select,textarea{font-family:'DM Sans',system-ui,sans-serif}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<script type="text/babel">
+const {useState,useEffect}=React;
+const C={bg:"#0f1117",surface:"#181c27",surfaceAlt:"#1e2330",border:"#2a2f3e",accent:"#f5a623",red:"#e05252",green:"#3ecf8e",text:"#e8eaf0",textMuted:"#7a8299",textDim:"#4a5068"};
+function lsGet(k){try{const v=localStorage.getItem(k);return v?JSON.parse(v):null;}catch{return null;}}
+function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch{}}
+const Inp=({value,onChange,placeholder,type="text",style={}})=>(
+  <input type={type} value={value} onChange={onChange} placeholder={placeholder}
+    style={{background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,color:C.text,padding:"12px 14px",fontSize:15,outline:"none",width:"100%",boxSizing:"border-box",...style}}/>
+);
+const Sel=({value,onChange,children})=>(
+  <select value={value} onChange={onChange}
+    style={{background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,color:C.text,padding:"12px 14px",fontSize:15,outline:"none",width:"100%",boxSizing:"border-box"}}>
+    {children}
+  </select>
+);
+function CrewApp(){
+  const [items,setItems]=useState([]);
+  const [jobs,setJobs]=useState([]);
+  const [crewName,setCrewName]=useState(()=>localStorage.getItem("crew:name")||"");
+  const [jobId,setJobId]=useState("");
+  const [date,setDate]=useState(new Date().toISOString().slice(0,10));
+  const [notes,setNotes]=useState("");
+  const [rows,setRows]=useState([{itemId:"",qty:""}]);
+  const [search,setSearch]=useState("");
+  const [submitted,setSubmitted]=useState(false);
+  const [error,setError]=useState("");
+
+  useEffect(()=>{
+    const i=lsGet("gb:items")||[];
+    const j=lsGet("gb:jobs")||[];
+    setItems(i);
+    const active=j.filter(x=>x.status==="active");
+    setJobs(active);
+    if(active.length>0)setJobId(active[0].id);
+  },[]);
+
+  useEffect(()=>{if(crewName)localStorage.setItem("crew:name",crewName);},[crewName]);
+
+  const filtered=search
+    ?items.filter(i=>i.name.toLowerCase().includes(search.toLowerCase())||i.sku.toLowerCase().includes(search.toLowerCase()))
+    :items;
+
+  const submit=()=>{
+    setError("");
+    if(!crewName.trim()){setError("Please enter your name.");return;}
+    if(!jobId){setError("Please select a job.");return;}
+    const valid=rows.filter(r=>r.itemId&&Number(r.qty)>0);
+    if(!valid.length){setError("Add at least one item with a quantity.");return;}
+    const job=jobs.find(j=>j.id===jobId);
+    const sub={
+      id:"sub"+Date.now(),submittedAt:Date.now(),date,
+      crewName:crewName.trim(),jobId,jobName:job?.name||"Unknown",
+      notes:notes.trim(),
+      items:valid.map(r=>({
+        itemId:r.itemId,
+        itemName:items.find(i=>i.id===r.itemId)?.name||"Unknown",
+        sku:items.find(i=>i.id===r.itemId)?.sku||"",
+        qty:Number(r.qty),
+        unit:items.find(i=>i.id===r.itemId)?.unit||"each"
+      }))
+    };
+    const existing=lsGet("gb:pending")||[];
+    lsSet("gb:pending",[sub,...existing]);
+    setSubmitted(true);
+  };
+
+  if(submitted)return(
+    <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,textAlign:"center"}}>
+      <div style={{fontSize:64,marginBottom:20}}>✅</div>
+      <h1 style={{fontWeight:800,fontSize:26,marginBottom:12,color:C.green}}>Submitted!</h1>
+      <p style={{color:C.textMuted,fontSize:16,maxWidth:320,lineHeight:1.6,marginBottom:32}}>
+        Your log has been sent to the boss for review. Inventory updates after approval.
+      </p>
+      <button onClick={()=>{setSubmitted(false);setRows([{itemId:"",qty:""}]);setNotes("");setSearch("");}}
+        style={{background:C.accent,color:"#000",border:"none",borderRadius:10,padding:"14px 32px",fontSize:16,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
+        Log Another Job
+      </button>
+    </div>
+  );
+
+  if(items.length===0)return(
+    <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,textAlign:"center"}}>
+      <div style={{fontSize:48,marginBottom:16}}>🏗</div>
+      <h2 style={{fontWeight:800,fontSize:20,marginBottom:10}}>Not Set Up Yet</h2>
+      <p style={{color:C.textMuted,fontSize:14,maxWidth:300,lineHeight:1.6}}>
+        The boss needs to open TradeStock on this device first to load the inventory. This page shares the same browser storage.
+      </p>
+    </div>
+  );
+
+  return(
+    <div style={{maxWidth:540,margin:"0 auto",paddingBottom:48}}>
+      <div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,padding:"16px 20px",display:"flex",alignItems:"center",gap:12,position:"sticky",top:0,zIndex:10}}>
+        <div style={{width:36,height:36,background:C.accent,borderRadius:9,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>🏗</div>
+        <div>
+          <div style={{fontWeight:800,fontSize:16}}>Job Log</div>
+          <div style={{fontSize:11,color:C.textDim,letterSpacing:.6}}>GUTTERBROTHERS · FT. MYERS</div>
+        </div>
+      </div>
+
+      <div style={{padding:"20px 16px"}}>
+        <p style={{color:C.textMuted,fontSize:13,marginBottom:20,lineHeight:1.6}}>
+          Fill this out after each job. Boss reviews and updates inventory.
+        </p>
+
+        <div style={{marginBottom:16}}>
+          <label style={{fontSize:13,fontWeight:700,color:C.textMuted,display:"block",marginBottom:6}}>Your Name *</label>
+          <Inp value={crewName} onChange={e=>setCrewName(e.target.value)} placeholder="First and last name"/>
+        </div>
+
+        <div style={{marginBottom:16}}>
+          <label style={{fontSize:13,fontWeight:700,color:C.textMuted,display:"block",marginBottom:6}}>Job / Project *</label>
+          {jobs.length===0
+            ?<div style={{background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"12px 14px",color:C.textMuted,fontSize:14}}>
+               No active jobs — contact the boss to add one.
+             </div>
+            :<Sel value={jobId} onChange={e=>setJobId(e.target.value)}>
+               {jobs.map(j=><option key={j.id} value={j.id}>{j.name}</option>)}
+             </Sel>
+          }
+        </div>
+
+        <div style={{marginBottom:20}}>
+          <label style={{fontSize:13,fontWeight:700,color:C.textMuted,display:"block",marginBottom:6}}>Date</label>
+          <Inp type="date" value={date} onChange={e=>setDate(e.target.value)}/>
+        </div>
+
+        <div style={{marginBottom:12}}>
+          <label style={{fontSize:13,fontWeight:700,color:C.textMuted,display:"block",marginBottom:6}}>Search Items</label>
+          <Inp value={search} onChange={e=>setSearch(e.target.value)} placeholder="Type name or SKU to filter list…"/>
+        </div>
+
+        <div style={{marginBottom:16}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <label style={{fontSize:11,fontWeight:700,color:C.textMuted,letterSpacing:.9,textTransform:"uppercase"}}>Materials Used *</label>
+            <button onClick={()=>setRows(p=>[...p,{itemId:"",qty:""}])}
+              style={{background:"transparent",border:`1px solid ${C.border}`,borderRadius:6,color:C.textMuted,padding:"5px 12px",fontSize:12,cursor:"pointer",fontWeight:700,fontFamily:"inherit"}}>
+              + Add Row
+            </button>
+          </div>
+          {rows.map((row,i)=>(
+            <div key={i} style={{display:"flex",gap:8,marginBottom:10,alignItems:"center"}}>
+              <div style={{flex:3}}>
+                <Sel value={row.itemId} onChange={e=>setRows(p=>p.map((r,idx)=>idx===i?{...r,itemId:e.target.value}:r))}>
+                  <option value="">Select item…</option>
+                  {filtered.map(item=>(
+                    <option key={item.id} value={item.id}>[{item.sku||item.category}] {item.name}</option>
+                  ))}
+                </Sel>
+              </div>
+              <div style={{flex:1}}>
+                <Inp type="number" value={row.qty}
+                  onChange={e=>setRows(p=>p.map((r,idx)=>idx===i?{...r,qty:e.target.value}:r))}
+                  placeholder="Qty"/>
+              </div>
+              {rows.length>1&&(
+                <button onClick={()=>setRows(p=>p.filter((_,idx)=>idx!==i))}
+                  style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:20,lineHeight:1,padding:"0 4px",flexShrink:0}}>✕</button>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div style={{marginBottom:20}}>
+          <label style={{fontSize:13,fontWeight:700,color:C.textMuted,display:"block",marginBottom:6}}>Notes (optional)</label>
+          <textarea value={notes} onChange={e=>setNotes(e.target.value)}
+            placeholder="Anything the boss should know…"
+            style={{width:"100%",background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,color:C.text,padding:"12px 14px",fontSize:15,fontFamily:"inherit",outline:"none",resize:"vertical",minHeight:80}}/>
+        </div>
+
+        {error&&(
+          <div style={{background:C.red+"18",border:`1px solid ${C.red}44`,borderRadius:8,padding:"10px 14px",color:C.red,fontSize:13,fontWeight:700,marginBottom:16}}>
+            {error}
+          </div>
+        )}
+
+        <button onClick={submit}
+          style={{width:"100%",background:C.accent,color:"#000",border:"none",borderRadius:10,padding:"15px 0",fontSize:16,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
+          Submit Job Log
+        </button>
+
+        <p style={{color:C.textDim,fontSize:11,textAlign:"center",marginTop:14,lineHeight:1.5}}>
+          Submission goes to boss for review.<br/>Inventory updates after approval.
+        </p>
+      </div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<CrewApp/>);
+</script>
+</body>
+</html>
