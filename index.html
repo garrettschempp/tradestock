@@ -446,12 +446,16 @@ function App(){
   const [jobs,setJobs]=useState(()=>lsGet("gb:jobs")||[]);
   const [logs,setLogs]=useState(()=>lsGet("gb:logs")||[]);
   const [pending,setPending]=useState(()=>lsGet("gb:pending")||[]);
+  const [workOrders,setWorkOrders]=useState(()=>lsGet("gb:workorders")||[]);
+  const [geminiKey,setGeminiKey]=useState(()=>localStorage.getItem("gb:geminiKey")||"");
   const [toast,setToast]=useState(null);
 
   useEffect(()=>lsSet("gb:items",items),[items]);
   useEffect(()=>lsSet("gb:jobs",jobs),[jobs]);
   useEffect(()=>lsSet("gb:logs",logs),[logs]);
   useEffect(()=>lsSet("gb:pending",pending),[pending]);
+  useEffect(()=>lsSet("gb:workorders",workOrders),[workOrders]);
+  useEffect(()=>{if(geminiKey)localStorage.setItem("gb:geminiKey",geminiKey);},[geminiKey]);
 
   const notify=(msg,color=C.green)=>{setToast({msg,color});setTimeout(()=>setToast(null),3500);};
 
@@ -461,7 +465,9 @@ function App(){
     {id:"usage",icon:"◎",label:"Log Usage"},
     {id:"pending",icon:"📋",label:`Pending${pending.length>0?` (${pending.length})`:""}`,alert:pending.length>0},
     {id:"history",icon:"≡",label:"History"},
+    {id:"workorders",icon:"📄",label:"Work Orders"},
     {id:"jobs",icon:"◉",label:"Jobs"},
+    {id:"settings",icon:"⚙",label:"Settings"},
   ];
 
   return(
@@ -498,6 +504,8 @@ function App(){
         {tab==="pending"&&<PendingReview pending={pending} setPending={setPending} items={items} setItems={setItems} logs={logs} setLogs={setLogs} jobs={jobs} notify={notify}/>}
         {tab==="history"&&<History logs={logs} jobs={jobs}/>}
         {tab==="jobs"&&<Jobs jobs={jobs} setJobs={setJobs} notify={notify}/>}
+        {tab==="workorders"&&<WorkOrders items={items} workOrders={workOrders} setWorkOrders={setWorkOrders} geminiKey={geminiKey} notify={notify} setTab={setTab}/>}
+        {tab==="settings"&&<Settings geminiKey={geminiKey} setGeminiKey={setGeminiKey} notify={notify}/>}
       </div>
     </div>
   );
@@ -1027,6 +1035,201 @@ function Jobs({jobs,setJobs,notify}){
           </div>
         </Modal>
       )}
+    </div>
+  );
+}
+
+
+// WorkOrders
+function WorkOrders({items,workOrders,setWorkOrders,geminiKey,notify,setTab}){
+  const [loading,setLoading]=useState(false);
+  const [activeWO,setActiveWO]=useState(null);
+  const [poModal,setPoModal]=useState(null);
+  const fileRef=useRef();
+  const toB64=(file)=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(",")[1]);r.onerror=rej;r.readAsDataURL(file);});
+  const uploadPDF=async(e)=>{
+    const file=e.target.files[0];if(!file)return;
+    if(!geminiKey){notify("Add your Gemini API key in Settings first.",C.red);setTab("settings");return;}
+    setLoading(true);notify("Reading work order with AI...",C.blue);
+    try{
+      const b64=await toB64(file);
+      const prompt="Read this ServiceBridge gutter work order PDF. Find every line item with a SKU code and quantity. SKU codes look like: 6ENL, USA-5SS-C, OGG-5-FM, 4AEL, 5ENL, 3X4-DS-WHI, 5HFH, 6HFEH, 3ROT, etc. Respond with ONLY valid JSON, no markdown, no explanation: {\"jobName\":\"name or address\",\"workOrderNumber\":\"WO# or null\",\"date\":\"date or null\",\"lineItems\":[{\"sku\":\"CODE\",\"description\":\"item desc\",\"qty\":10,\"unit\":\"each\"}]}";
+      const resp=await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key="+geminiKey,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{parts:[{text:prompt},{inline_data:{mime_type:"application/pdf",data:b64}}]}],generationConfig:{temperature:0.1,maxOutputTokens:2048}})});
+      const data=await resp.json();
+      if(data.error){notify("Gemini error: "+data.error.message,C.red);setLoading(false);return;}
+      let raw=((data.candidates||[])[0]?.content?.parts?.[0]?.text||"{}").replace(/```json|```/g,"").trim();
+      const parsed=JSON.parse(raw);
+      const matched=(parsed.lineItems||[]).map(li=>{
+        const inv=items.find(i=>i.sku&&i.sku.toLowerCase()===li.sku.toLowerCase());
+        const need=Number(li.qty)||0,have=inv?inv.qty:0;
+        return{...li,inventoryItem:inv||null,have,need,short:Math.max(0,need-have),matched:!!inv};
+      });
+      const wo={id:"wo"+Date.now(),fileName:file.name,jobName:parsed.jobName||file.name,workOrderNumber:parsed.workOrderNumber||null,date:parsed.date||new Date().toISOString().slice(0,10),uploadedAt:Date.now(),lineItems:matched,totalItems:matched.length,shortages:matched.filter(i=>i.short>0).length,unmatched:matched.filter(i=>!i.matched).length};
+      setWorkOrders(p=>[wo,...p]);setActiveWO(wo);
+      notify("Done - "+matched.length+" items, "+matched.filter(i=>i.short>0).length+" shortages");
+    }catch(err){notify("Error: "+err.message,C.red);}
+    setLoading(false);if(e.target)e.target.value="";
+  };
+  const generatePO=(wo)=>{
+    const byS={};
+    wo.lineItems.filter(li=>li.short>0&&li.inventoryItem).forEach(li=>{const s=li.inventoryItem.supplier||"Other";if(!byS[s])byS[s]=[];byS[s].push(li);});
+    const um=wo.lineItems.filter(li=>li.short>0&&!li.inventoryItem);
+    if(um.length)byS["Unknown / Check Manually"]=um;
+    setPoModal({wo,bySupplier:byS});
+  };
+  const printPO=(wo,byS)=>{
+    const lines=Object.entries(byS).map(([s,its])=>{
+      const rows=its.map(li=>"  "+li.sku+" - "+(li.description||"")+" - Qty: "+li.short+(li.inventoryItem?" @ $"+Number(li.inventoryItem.cost).toFixed(2)+" = $"+(li.short*li.inventoryItem.cost).toFixed(2):" (no price)")).join("\n");
+      return "\n-- "+s.toUpperCase()+" --\n"+rows+"\n  Subtotal: $"+its.reduce((s,li)=>s+(li.inventoryItem?li.short*li.inventoryItem.cost:0),0).toFixed(2);
+    }).join("\n");
+    const grand=Object.values(byS).flat().reduce((s,li)=>s+(li.inventoryItem?li.short*li.inventoryItem.cost:0),0);
+    const win=window.open("","_blank");
+    win.document.write("<pre style='font-family:monospace;padding:32px;font-size:14px;line-height:2'>PURCHASE ORDER - GUTTERBROTHERS\nDate: "+new Date().toLocaleDateString()+"\nJob: "+wo.jobName+(wo.workOrderNumber?" #"+wo.workOrderNumber:"")+lines+"\n\nGRAND TOTAL: $"+grand.toFixed(2)+"</pre>");
+    win.document.close();win.print();
+  };
+  return(
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6,flexWrap:"wrap",gap:12}}>
+        <h2 style={{fontWeight:800,fontSize:22,margin:0}}>Work Orders</h2>
+        <div style={{display:"flex",gap:10,alignItems:"center"}}>
+          {!geminiKey&&<Btn variant="ghost" small onClick={()=>setTab("settings")}>Add API Key First</Btn>}
+          <label style={{cursor:"pointer"}}>
+            <Btn onClick={()=>{}} disabled={loading}>{loading?"Reading PDF...":"Upload Work Order PDF"}</Btn>
+            <input ref={fileRef} type="file" accept=".pdf" style={{display:"none"}} onChange={uploadPDF}/>
+          </label>
+        </div>
+      </div>
+      <p style={{color:C.textMuted,fontSize:13,marginBottom:20,lineHeight:1.6}}>Upload a ServiceBridge PDF. Gemini AI reads the SKUs, compares to your inventory, and generates a purchase order by supplier.</p>
+      {!geminiKey&&(
+        <Card style={{marginBottom:20,border:"1px solid "+C.accent+"44",background:C.accent+"0a"}}>
+          <div style={{display:"flex",gap:14,alignItems:"center"}}>
+            <div style={{fontSize:32}}>🔑</div>
+            <div><div style={{fontWeight:800,marginBottom:4}}>Gemini API Key Required</div><div style={{color:C.textMuted,fontSize:13}}>Go to the Settings tab and paste your key to enable PDF reading.</div></div>
+            <Btn small onClick={()=>setTab("settings")} style={{marginLeft:"auto",flexShrink:0}}>Go to Settings</Btn>
+          </div>
+        </Card>
+      )}
+      {workOrders.length===0
+        ?<Card style={{textAlign:"center",padding:52}}><div style={{fontSize:52,marginBottom:16}}>📄</div><div style={{fontWeight:700,fontSize:16,marginBottom:8}}>No work orders yet</div><div style={{color:C.textMuted,fontSize:13}}>Upload a ServiceBridge PDF above to get started</div></Card>
+        :<div style={{display:"grid",gap:12}}>{workOrders.map(wo=>(
+          <Card key={wo.id} style={{border:"1px solid "+(activeWO&&activeWO.id===wo.id?C.accent:C.border)}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
+              <div onClick={()=>setActiveWO(activeWO&&activeWO.id===wo.id?null:wo)} style={{flex:1,cursor:"pointer"}}>
+                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6,flexWrap:"wrap"}}>
+                  <span style={{fontWeight:800,fontSize:15}}>{wo.jobName}</span>
+                  {wo.workOrderNumber&&<Badge color={C.blue} small>{"#"+wo.workOrderNumber}</Badge>}
+                </div>
+                <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                  <span style={{fontSize:12,color:C.textMuted}}>{new Date(wo.uploadedAt).toLocaleDateString()}</span>
+                  <Badge color={C.blue} small>{wo.totalItems+" items"}</Badge>
+                  <Badge color={wo.shortages===0?C.green:C.red} small>{wo.shortages===0?"All In Stock":wo.shortages+" shortage"+(wo.shortages!==1?"s":"")}</Badge>
+                  {wo.unmatched>0&&<Badge color={C.textMuted} small>{wo.unmatched+" unmatched SKU"+(wo.unmatched!==1?"s":"")}</Badge>}
+                </div>
+              </div>
+              <div style={{display:"flex",gap:8,flexShrink:0}}>
+                {wo.shortages>0&&<Btn small onClick={()=>generatePO(wo)}>Generate PO</Btn>}
+                <Btn variant="ghost" small onClick={()=>setActiveWO(activeWO&&activeWO.id===wo.id?null:wo)}>{activeWO&&activeWO.id===wo.id?"Hide":"View"}</Btn>
+                <Btn variant="danger" small onClick={()=>{setWorkOrders(p=>p.filter(w=>w.id!==wo.id));if(activeWO&&activeWO.id===wo.id)setActiveWO(null);}}>X</Btn>
+              </div>
+            </div>
+            {activeWO&&activeWO.id===wo.id&&(
+              <div style={{marginTop:16,borderTop:"1px solid "+C.border,paddingTop:16}}>
+                <div style={{overflowX:"auto"}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:600}}>
+                    <thead><tr style={{borderBottom:"1px solid "+C.border,background:C.surfaceAlt}}>{["SKU","Description","Need","Have","Short","Cost ea","Order $","Status"].map(h=>(<th key={h} style={{padding:"8px 10px",textAlign:"left",color:C.textMuted,fontSize:10,fontWeight:700,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>))}</tr></thead>
+                    <tbody>{wo.lineItems.map((li,i)=>{
+                      const sc=!li.matched?C.textMuted:li.short===0?C.green:C.red;
+                      const st=!li.matched?"Unknown SKU":li.short===0?"In Stock":"Short "+li.short;
+                      const orderCost=li.inventoryItem&&li.short>0?(li.short*li.inventoryItem.cost).toFixed(2):null;
+                      return(<tr key={i} style={{borderBottom:"1px solid "+C.border+"22",background:li.short>0?C.red+"09":"transparent"}}>
+                        <td style={{padding:"8px 10px",fontFamily:"monospace",fontSize:11,color:C.textMuted,whiteSpace:"nowrap"}}>{li.sku||"—"}</td>
+                        <td style={{padding:"8px 10px",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{li.description||li.inventoryItem&&li.inventoryItem.name||"—"}</td>
+                        <td style={{padding:"8px 10px",fontWeight:700}}>{li.need}</td>
+                        <td style={{padding:"8px 10px",color:li.have<li.need?C.red:C.green,fontWeight:700}}>{li.matched?li.have:"—"}</td>
+                        <td style={{padding:"8px 10px",fontWeight:800,color:li.short>0?C.red:C.green}}>{li.short>0?li.short:"—"}</td>
+                        <td style={{padding:"8px 10px",color:C.textMuted}}>{li.inventoryItem?"$"+Number(li.inventoryItem.cost).toFixed(2):"—"}</td>
+                        <td style={{padding:"8px 10px",fontFamily:"monospace",fontSize:11,color:orderCost?C.accent:C.textDim}}>{orderCost?"$"+orderCost:"—"}</td>
+                        <td style={{padding:"8px 10px"}}><Badge color={sc} small>{st}</Badge></td>
+                      </tr>);
+                    })}</tbody>
+                  </table>
+                </div>
+                {wo.shortages>0&&<div style={{marginTop:14,display:"flex",justifyContent:"flex-end"}}><Btn onClick={()=>generatePO(wo)}>Generate Purchase Orders</Btn></div>}
+              </div>
+            )}
+          </Card>
+        ))}</div>
+      }
+      {poModal&&(
+        <Modal title="Purchase Orders" onClose={()=>setPoModal(null)} wide>
+          <p style={{color:C.textMuted,fontSize:13,marginBottom:20}}>Shortages grouped by supplier. Review and print to email your reps.</p>
+          {Object.entries(poModal.bySupplier).map(([sup,its])=>(
+            <Card key={sup} style={{marginBottom:14,border:"1px solid "+(SUP_COLOR[sup]||C.textMuted)+"44"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+                <Badge color={SUP_COLOR[sup]||C.textMuted}>{sup}</Badge>
+                <span style={{fontWeight:800,color:C.accent}}>{"$"+its.reduce((s,li)=>s+(li.inventoryItem?li.short*li.inventoryItem.cost:0),0).toFixed(2)}</span>
+              </div>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead><tr style={{borderBottom:"1px solid "+C.border}}>{["SKU","Item","Qty to Order","Unit Cost","Line Total"].map(h=>(<th key={h} style={{padding:"6px 10px",textAlign:"left",color:C.textMuted,fontSize:10,fontWeight:700,textTransform:"uppercase"}}>{h}</th>))}</tr></thead>
+                <tbody>{its.map((li,i)=>(<tr key={i} style={{borderBottom:"1px solid "+C.border+"22"}}>
+                  <td style={{padding:"7px 10px",fontFamily:"monospace",fontSize:11,color:C.textMuted}}>{li.sku||"?"}</td>
+                  <td style={{padding:"7px 10px"}}>{li.description||li.inventoryItem&&li.inventoryItem.name||"Unknown"}</td>
+                  <td style={{padding:"7px 10px",fontWeight:800,color:C.accent}}>{li.short+" "+(li.unit||"")}</td>
+                  <td style={{padding:"7px 10px",color:C.textMuted}}>{li.inventoryItem?"$"+Number(li.inventoryItem.cost).toFixed(2):"—"}</td>
+                  <td style={{padding:"7px 10px",fontFamily:"monospace"}}>{li.inventoryItem?"$"+(li.short*li.inventoryItem.cost).toFixed(2):"—"}</td>
+                </tr>))}</tbody>
+              </table>
+            </Card>
+          ))}
+          <div style={{borderTop:"1px solid "+C.border,paddingTop:16,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+            <div style={{fontWeight:800,fontSize:16}}>Grand Total: <span style={{color:C.accent}}>{"$"+Object.values(poModal.bySupplier).flat().reduce((s,li)=>s+(li.inventoryItem?li.short*li.inventoryItem.cost:0),0).toFixed(2)}</span></div>
+            <div style={{display:"flex",gap:10}}>
+              <Btn variant="secondary" onClick={()=>setPoModal(null)}>Close</Btn>
+              <Btn onClick={()=>printPO(poModal.wo,poModal.bySupplier)}>Print PO</Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// Settings
+function Settings({geminiKey,setGeminiKey,notify}){
+  const [draft,setDraft]=useState(geminiKey);
+  const [show,setShow]=useState(false);
+  return(
+    <div style={{maxWidth:580}}>
+      <h2 style={{fontWeight:800,fontSize:22,marginBottom:20}}>Settings</h2>
+      <Card style={{marginBottom:16}}>
+        <div style={{fontWeight:800,fontSize:15,marginBottom:8}}>Gemini API Key</div>
+        <p style={{color:C.textMuted,fontSize:13,marginBottom:14,lineHeight:1.6}}>Required for Work Orders PDF reading. Get yours free at <a href="https://aistudio.google.com" target="_blank" style={{color:C.accent}}>aistudio.google.com</a>. Stored only in this browser — never shared.</p>
+        <div style={{display:"flex",gap:10,marginBottom:12}}>
+          <Inp type={show?"text":"password"} value={draft} onChange={e=>setDraft(e.target.value)} placeholder="AIzaSy..." style={{fontFamily:"monospace",fontSize:13}}/>
+          <Btn variant="ghost" small onClick={()=>setShow(s=>!s)}>{show?"Hide":"Show"}</Btn>
+        </div>
+        <div style={{display:"flex",gap:10}}>
+          <Btn onClick={()=>{setGeminiKey(draft.trim());notify("API key saved!");}}>Save Key</Btn>
+          {geminiKey&&<Btn variant="danger" onClick={()=>{setDraft("");setGeminiKey("");notify("Key cleared.",C.red);}}>Clear</Btn>}
+        </div>
+        {geminiKey&&<div style={{marginTop:14,display:"flex",gap:8,alignItems:"center"}}><Badge color={C.green}>Key Saved</Badge><span style={{fontSize:12,color:C.textMuted}}>Work Orders PDF reading is enabled</span></div>}
+      </Card>
+      <Card style={{marginBottom:16}}>
+        <div style={{fontWeight:800,fontSize:15,marginBottom:8}}>Crew Page URL</div>
+        <p style={{color:C.textMuted,fontSize:13,marginBottom:10}}>Share this link with your crew so they can submit job usage reports from their phones.</p>
+        <div style={{background:C.bg,border:"1px solid "+C.border,borderRadius:6,padding:"10px 14px",fontFamily:"monospace",fontSize:13,color:C.accent,wordBreak:"break-all"}}>{window.location.origin+"/crew.html"}</div>
+        <Btn variant="ghost" small style={{marginTop:10}} onClick={()=>{navigator.clipboard.writeText(window.location.origin+"/crew.html");notify("Crew URL copied!");}}>Copy Link</Btn>
+      </Card>
+      <Card>
+        <div style={{fontWeight:800,fontSize:15,marginBottom:8}}>Data Backup</div>
+        <p style={{color:C.textMuted,fontSize:13,marginBottom:12,lineHeight:1.6}}>All inventory data lives in this browser only. Use the Export button in Inventory regularly, or download a full JSON backup here.</p>
+        <Btn variant="ghost" small onClick={()=>{
+          const d={items:lsGet("gb:items"),jobs:lsGet("gb:jobs"),logs:lsGet("gb:logs"),workOrders:lsGet("gb:workorders")};
+          const b=new Blob([JSON.stringify(d,null,2)],{type:"application/json"});
+          const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="tradestock-backup-"+new Date().toISOString().slice(0,10)+".json";a.click();
+          notify("Backup downloaded!");
+        }}>Download Full Backup (JSON)</Btn>
+      </Card>
     </div>
   );
 }
