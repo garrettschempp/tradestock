@@ -1,0 +1,1037 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>TradeStock — GutterBrothers</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700;800&family=DM+Mono:wght@500&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0f1117;color:#e8eaf0;font-family:'DM Sans',system-ui,sans-serif;min-height:100vh}
+input,select,textarea{font-family:'DM Sans',system-ui,sans-serif}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:#181c27}
+::-webkit-scrollbar-thumb{background:#2a2f3e;border-radius:3px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useRef}=React;
+
+// ── Storage: localStorage (your browser = source of truth) ───────────────────
+function lsGet(key){try{const v=localStorage.getItem(key);return v?JSON.parse(v):null;}catch{return null;}}
+function lsSet(key,val){try{localStorage.setItem(key,JSON.stringify(val));}catch{}}
+
+// ── Design tokens ─────────────────────────────────────────────────────────────
+const C={
+  bg:"#0f1117",surface:"#181c27",surfaceAlt:"#1e2330",border:"#2a2f3e",
+  accent:"#f5a623",red:"#e05252",green:"#3ecf8e",blue:"#4d9de0",
+  purple:"#a78bfa",teal:"#2dd4bf",
+  text:"#e8eaf0",textMuted:"#7a8299",textDim:"#4a5068",
+};
+
+const CATEGORIES=["Gutter Coil","K-Style Gutters","Half Round Gutters","Copper Gutters","Downspouts","Elbows","End Caps","Corners & Miters","Outlets & Drops","Hangers & Hardware","Gutter Guards","Fasteners & Screws","Paint & Sealants","Materials","Accessories","Other"];
+const SUPPLIERS=["All","Spectra","US Aluminum","OGG","Other"];
+const UNITS=["each","ft","lb","box","bag","roll","bulk","ctn"];
+const SUP_COLOR={"Spectra":C.blue,"US Aluminum":C.accent,"OGG":C.green,"Other":C.textMuted};
+const CAT_COLOR={"K-Style Gutters":C.accent,"Half Round Gutters":C.purple,"Copper Gutters":"#c97b2e","Downspouts":C.blue,"Elbows":C.teal,"End Caps":C.green,"Corners & Miters":"#e8845a","Outlets & Drops":"#7ab8e8","Hangers & Hardware":"#b8a7e8","Gutter Guards":C.green,"Fasteners & Screws":C.textMuted,"Paint & Sealants":"#f4a8c0","Materials":"#8ac4b8","Accessories":C.textMuted,"Gutter Coil":"#d4c57a","Other":C.textDim};
+
+// ── Seed Data ─────────────────────────────────────────────────────────────────
+const RAW_SKUS=[
+// GutterBrothers product SKUs (qty=0, awaiting physical count)
+["6K-ALU-30WHI",'6" Aluminum 30° White K-Style',"K-Style Gutters","ft",0,""],
+["6K-ALU-80WHI",'6" Aluminum 80° White K-Style',"K-Style Gutters","ft",0,""],
+["6K-ALU-ALM",'6" Aluminum Almond K-Style',"K-Style Gutters","ft",0,""],
+["6K-ALU-ANIV",'6" Aluminum Antique Ivory K-Style',"K-Style Gutters","ft",0,""],
+["6K-ALU-BEBR",'6" Aluminum Beaver Brown K-Style',"K-Style Gutters","ft",0,""],
+["6K-ALU-BLK",'6" Aluminum Black K-Style',"K-Style Gutters","ft",0,""],
+["6K-ALU-BRNZ",'6" Aluminum Bronze K-Style',"K-Style Gutters","ft",0,""],
+["6K-ALU-CLAY",'6" Aluminum Clay K-Style',"K-Style Gutters","ft",0,""],
+["6K-ALU-COBR",'6" Aluminum Cocoa Brown K-Style',"K-Style Gutters","ft",0,""],
+["6K-ALU-COGR",'6" Aluminum Colonial Gray K-Style',"K-Style Gutters","ft",0,""],
+["6K-ALU-CRE",'6" Aluminum Cream K-Style',"K-Style Gutters","ft",0,""],
+["6K-ALU-DECO",'6" Aluminum Designer Copper K-Style',"K-Style Gutters","ft",0,""],
+["6K-ALU-DEER",'6" Aluminum Deerskin K-Style',"K-Style Gutters","ft",0,""],
+["6K-ALU-DOGR",'6" Aluminum Dove Gray K-Style',"K-Style Gutters","ft",0,""],
+["6K-ALU-EGG",'6" Aluminum Eggshell K-Style',"K-Style Gutters","ft",0,""],
+["6K-ALU-FAME",'6" Aluminum Farmhouse Metal K-Style',"K-Style Gutters","ft",0,""],
+["6K-ALU-FOGR",'6" Aluminum Forest Green K-Style',"K-Style Gutters","ft",0,""],
+["6K-ALU-LIN",'6" Aluminum Linen K-Style',"K-Style Gutters","ft",0,""],
+["6K-ALU-MUBR",'6" Aluminum Musket Brown K-Style',"K-Style Gutters","ft",0,""],
+["6K-ALU-PECL",'6" Aluminum Pebblestone Clay K-Style',"K-Style Gutters","ft",0,""],
+["6K-ALU-SAB",'6" Aluminum Sable K-Style',"K-Style Gutters","ft",0,""],
+["6K-ALU-SAGR",'6" Aluminum Sandstone Gray K-Style',"K-Style Gutters","ft",0,""],
+["6K-ALU-SILG",'6" Aluminum Silver Gray K-Style',"K-Style Gutters","ft",0,""],
+["6K-ALU-TAN",'6" Aluminum Tuxedo Gray K-Style',"K-Style Gutters","ft",0,""],
+["6K-ALU-TERI",'6" Aluminum Terra Ivory K-Style',"K-Style Gutters","ft",0,""],
+["6K-ALU-WHI",'6" Aluminum White K-Style',"K-Style Gutters","ft",0,""],
+["5K-ALU-WHI",'5" Aluminum White K-Style',"K-Style Gutters","ft",0,""],
+["5K-ALU-BLK",'5" Aluminum Black K-Style',"K-Style Gutters","ft",0,""],
+["5K-ALU-MUBR",'5" Aluminum Musket Brown K-Style',"K-Style Gutters","ft",0,""],
+["5K-ALU-CLAY",'5" Aluminum Clay K-Style',"K-Style Gutters","ft",0,""],
+["5K-ALU-BRNZ",'5" Aluminum Bronze K-Style',"K-Style Gutters","ft",0,""],
+["5K-ALU-COGR",'5" Aluminum Colonial Gray K-Style',"K-Style Gutters","ft",0,""],
+["5K-ALU-ALM",'5" Aluminum Almond K-Style',"K-Style Gutters","ft",0,""],
+["5K-ALU-DECO",'5" Aluminum Designer Copper K-Style',"K-Style Gutters","ft",0,""],
+["6HR-ALU-WHI",'6" Aluminum White Half Round',"Half Round Gutters","ft",0,""],
+["6HR-ALU-BLK",'6" Aluminum Black Half Round',"Half Round Gutters","ft",0,""],
+["6HR-ALU-MUBR",'6" Aluminum Musket Brown Half Round',"Half Round Gutters","ft",0,""],
+["6HR-CU",'6" Copper Half Round',"Copper Gutters","ft",0,""],
+["5HR-CU",'5" Copper Half Round',"Copper Gutters","ft",0,""],
+["6K-CU",'6" Copper K-Style',"Copper Gutters","ft",0,""],
+["2X3-DS-WHI",'2"x3" Downspout White',"Downspouts","ft",0,""],
+["2X3-DS-BLK",'2"x3" Downspout Black',"Downspouts","ft",0,""],
+["2X3-DS-MUBR",'2"x3" Downspout Musket Brown',"Downspouts","ft",0,""],
+["2X3-DS-CLAY",'2"x3" Downspout Clay',"Downspouts","ft",0,""],
+["2X3-DS-BRNZ",'2"x3" Downspout Bronze',"Downspouts","ft",0,""],
+["3X4-DS-WHI",'3"x4" Downspout White',"Downspouts","ft",0,""],
+["3X4-DS-BLK",'3"x4" Downspout Black',"Downspouts","ft",0,""],
+["3X4-DS-MUBR",'3"x4" Downspout Musket Brown',"Downspouts","ft",0,""],
+["3X4-DS-CLAY",'3"x4" Downspout Clay',"Downspouts","ft",0,""],
+["3X4-DS-COGR",'3"x4" Downspout Colonial Gray',"Downspouts","ft",0,""],
+["3X4-DS-DECO",'3"x4" Downspout Designer Copper',"Downspouts","each",0,""],
+["4RD-DS-WHI",'4" Round Downspout White',"Downspouts","each",0,""],
+["4RD-DS-BLK",'4" Round Downspout Black',"Downspouts","each",0,""],
+["4RD-DS-DECO",'4" Round Downspout Designer Copper',"Downspouts","each",0,""],
+["4X5-DS-WHI",'4"x5" Downspout White',"Downspouts","each",0,""],
+["4X5-DS-BLK",'4"x5" Downspout Black',"Downspouts","each",0,""],
+["2X3-AEL-WHI",'2"x3" A Elbow White',"Elbows","each",0,""],
+["2X3-AEL-BLK",'2"x3" A Elbow Black',"Elbows","each",0,""],
+["2X3-AEL-MUBR",'2"x3" A Elbow Musket Brown',"Elbows","each",0,""],
+["2X3-BEL-WHI",'2"x3" B Elbow White',"Elbows","each",0,""],
+["2X3-BEL-BLK",'2"x3" B Elbow Black',"Elbows","each",0,""],
+["2X3-AOFF-WHI",'2"x3" A Offset Elbow White',"Elbows","each",0,""],
+["2X3-BOFF-WHI",'2"x3" B Offset Elbow White',"Elbows","each",0,""],
+["3X4-AEL-WHI",'3"x4" A Elbow White',"Elbows","each",0,""],
+["3X4-AEL-BLK",'3"x4" A Elbow Black',"Elbows","each",0,""],
+["3X4-AEL-MUBR",'3"x4" A Elbow Musket Brown',"Elbows","each",0,""],
+["3X4-BEL-WHI",'3"x4" B Elbow White',"Elbows","each",0,""],
+["3X4-BEL-BLK",'3"x4" B Elbow Black',"Elbows","each",0,""],
+["3X4-AOFF-WHI",'3"x4" A Offset Elbow White',"Elbows","each",0,""],
+["3X4-BOFF-WHI",'3"x4" B Offset Elbow White',"Elbows","each",0,""],
+["3X4-AEL-DECO",'3"x4" A Elbow Designer Copper',"Elbows","each",0,""],
+["4RD-EL-WHI",'4" Round Elbow White',"Elbows","each",0,""],
+["4RD-EL-BLK",'4" Round Elbow Black',"Elbows","each",0,""],
+["4RD-EL-DECO",'4" Round Elbow Designer Copper',"Elbows","each",0,""],
+["4X5-AEL-WHI",'4"x5" A Elbow White',"Elbows","each",0,""],
+["4X5-BEL-WHI",'4"x5" B Elbow White',"Elbows","each",0,""],
+["5-EC-L-WHI",'5" Left End Cap White',"End Caps","each",0,""],
+["5-EC-R-WHI",'5" Right End Cap White',"End Caps","each",0,""],
+["5-EC-L-BLK",'5" Left End Cap Black',"End Caps","each",0,""],
+["5-EC-R-BLK",'5" Right End Cap Black',"End Caps","each",0,""],
+["5-EC-L-MUBR",'5" Left End Cap Musket Brown',"End Caps","each",0,""],
+["5-EC-R-MUBR",'5" Right End Cap Musket Brown',"End Caps","each",0,""],
+["5-EC-L-CLAY",'5" Left End Cap Clay',"End Caps","each",0,""],
+["5-EC-R-CLAY",'5" Right End Cap Clay',"End Caps","each",0,""],
+["5-EC-L-BRNZ",'5" Left End Cap Bronze',"End Caps","each",0,""],
+["5-EC-R-BRNZ",'5" Right End Cap Bronze',"End Caps","each",0,""],
+["6-EC-L-WHI",'6" Left End Cap White',"End Caps","each",0,""],
+["6-EC-R-WHI",'6" Right End Cap White',"End Caps","each",0,""],
+["6-EC-L-BLK",'6" Left End Cap Black',"End Caps","each",0,""],
+["6-EC-R-BLK",'6" Right End Cap Black',"End Caps","each",0,""],
+["6-EC-L-MUBR",'6" Left End Cap Musket Brown',"End Caps","each",0,""],
+["6-EC-R-MUBR",'6" Right End Cap Musket Brown',"End Caps","each",0,""],
+["6-EC-L-CLAY",'6" Left End Cap Clay',"End Caps","each",0,""],
+["6-EC-R-CLAY",'6" Right End Cap Clay',"End Caps","each",0,""],
+["6-EC-L-DECO",'6" Left End Cap Designer Copper',"End Caps","each",0,""],
+["6-EC-R-DECO",'6" Right End Cap Designer Copper',"End Caps","each",0,""],
+["OUT-2X3-WHI",'2"x3" Outlet White',"Outlets & Drops","each",0,""],
+["OUT-2X3-BLK",'2"x3" Outlet Black',"Outlets & Drops","each",0,""],
+["OUT-3X4-WHI",'3"x4" Outlet White',"Outlets & Drops","each",0,""],
+["OUT-3X4-BLK",'3"x4" Outlet Black',"Outlets & Drops","each",0,""],
+["OUT-4X5-WHI",'4"x5" Outlet White',"Outlets & Drops","each",0,""],
+["OUT-4X5-BLK",'4"x5" Outlet Black',"Outlets & Drops","each",0,""],
+["5-GUARD-HF-MILL",'5" Hydro Flo Guard Mill',"Gutter Guards","ft",0,""],
+["5-GUARD-HF-BLK",'5" Hydro Flo Guard Black',"Gutter Guards","ft",0,""],
+["6-GUARD-HF-MILL",'6" Hydro Flo Guard Mill',"Gutter Guards","ft",0,""],
+["6-GUARD-HF-BLK",'6" Hydro Flo Guard Black',"Gutter Guards","ft",0,""],
+["6-ONE-GUARD-LEC",'6" One Gutter Guard Left End Cap',"Gutter Guards","each",0,""],
+["6-ONE-GUARD-REC",'6" One Gutter Guard Right End Cap',"Gutter Guards","each",0,""],
+];
+
+const PRICED_SKUS=[
+// Spectra — Gutter Coil
+["027(11&11875)",'Gutter Coil .027x11-3/4"',"Gutter Coil","lb",3.40,"Spectra"],
+["032(11&11875)",'Gutter Coil .032x11-3/4"',"Gutter Coil","lb",3.40,"Spectra"],
+["02715",'Gutter Coil .027x15"',"Gutter Coil","lb",3.40,"Spectra"],
+["03215",'Gutter Coil .032x15"',"Gutter Coil","lb",3.40,"Spectra"],
+["02711DCP",'Gutter Coil .027x11-3/4" Designer Copper',"Gutter Coil","lb",4.14,"Spectra"],
+["02715DCP",'Gutter Coil .027x15" Designer Copper',"Gutter Coil","lb",4.14,"Spectra"],
+["02717875",'Gutter Coil .027x17-7/8"',"Gutter Coil","lb",3.50,"Spectra"],
+["03217875",'Gutter Coil .032x17-7/8"',"Gutter Coil","lb",3.50,"Spectra"],
+// Spectra — Trim
+["280WHITE",'White Polyester Trim Coil 24"x50\'',"Materials","roll",104.64,"Spectra"],
+["189PVC",'White PVC Trim Coil 24"x50\'',"Materials","roll",116.07,"Spectra"],
+["VLSS","Aluminum Starter Strip","Materials","each",3.60,"Spectra"],
+// Spectra — Downpipe
+["3DP10",'2"x3" Downpipe 10ft',"Downspouts","ft",1.00,"Spectra"],
+["3DP8",'2"x3" Downpipe 8ft',"Downspouts","ft",1.00,"Spectra"],
+["4DP10",'3"x4" Downpipe 10ft',"Downspouts","ft",1.29,"Spectra"],
+["4DP8",'3"x4" Downpipe 8ft',"Downspouts","ft",1.29,"Spectra"],
+["4DP10DCP",'3"x4" Downpipe 10ft Designer Copper',"Downspouts","each",24.96,"Spectra"],
+["4RDP10",'4" Round Downpipe 10ft',"Downspouts","each",23.41,"Spectra"],
+["4RDP10DCP",'4" Round Downpipe 10ft Designer Copper',"Downspouts","each",41.51,"Spectra"],
+["5DP10",'4"x5" Downpipe 10ft',"Downspouts","each",29.50,"Spectra"],
+// Spectra — Elbows
+["3AEL",'2"x3" A Elbow',"Elbows","each",1.05,"Spectra"],
+["3BEL",'2"x3" B Elbow',"Elbows","each",1.05,"Spectra"],
+["3AOFFSET",'2"x3" A Offset Elbow 45/30deg',"Elbows","each",1.05,"Spectra"],
+["3BOFFSET",'2"x3" B Offset Elbow 45/30deg',"Elbows","each",1.05,"Spectra"],
+["4AEL",'3"x4" A Elbow',"Elbows","each",1.47,"Spectra"],
+["4BEL",'3"x4" B Elbow',"Elbows","each",1.47,"Spectra"],
+["4AOFFSET",'3"x4" A Offset Elbow 45/30deg',"Elbows","each",1.47,"Spectra"],
+["4BOFFSET",'3"x4" B Offset Elbow 45/30deg',"Elbows","each",1.47,"Spectra"],
+["4EOS",'3"x4" One Piece Offset',"Elbows","each",7.63,"Spectra"],
+["4AELDCP",'3"x4" A Elbow Designer Copper',"Elbows","each",2.34,"Spectra"],
+["4REL",'4" Round Elbow',"Elbows","each",4.13,"Spectra"],
+["4ROS",'4" Round Offset Elbow',"Elbows","each",4.12,"Spectra"],
+["4RELDCP",'4" Round Elbow Designer Copper',"Elbows","each",6.25,"Spectra"],
+["5AEL",'4"x5" A Elbow',"Elbows","each",7.73,"Spectra"],
+["5BEL",'4"x5" B Elbow',"Elbows","each",7.73,"Spectra"],
+// Spectra — End Caps
+["5ENL",'5" Left End Cap',"End Caps","each",0.44,"Spectra"],
+["5ENR",'5" Right End Cap',"End Caps","each",0.44,"Spectra"],
+["5ENLDCP",'5" Left End Cap Designer Copper',"End Caps","each",0.75,"Spectra"],
+["5ENRDCP",'5" Right End Cap Designer Copper',"End Caps","each",0.75,"Spectra"],
+["6ENL",'6" Left End Cap',"End Caps","each",0.78,"Spectra"],
+["6ENR",'6" Right End Cap',"End Caps","each",0.78,"Spectra"],
+["6ENLDCP",'6" Left End Cap Designer Copper',"End Caps","each",1.55,"Spectra"],
+["6ENRDCP",'6" Right End Cap Designer Copper',"End Caps","each",1.55,"Spectra"],
+["6HRENDCP",'6" Half-Round End Cap Designer Copper',"End Caps","each",6.39,"Spectra"],
+["7ENL",'7" Left End Cap',"End Caps","each",8.04,"Spectra"],
+["7ENR",'7" Right End Cap',"End Caps","each",8.04,"Spectra"],
+// Spectra — Miters
+["5OTM",'5" Outside Box Miter',"Corners & Miters","each",4.15,"Spectra"],
+["5INM",'5" Inside Box Miter',"Corners & Miters","each",4.15,"Spectra"],
+["6OTM",'6" Outside Box Miter',"Corners & Miters","each",11.90,"Spectra"],
+["6INM",'6" Inside Box Miter',"Corners & Miters","each",11.90,"Spectra"],
+["5OSM",'5" Outside Strip Miter',"Corners & Miters","each",1.99,"Spectra"],
+["5ISM",'5" Inside Strip Miter',"Corners & Miters","each",1.99,"Spectra"],
+["6OSM",'6" Outside Strip Miter',"Corners & Miters","each",3.77,"Spectra"],
+["6ISM",'6" Inside Strip Miter',"Corners & Miters","each",3.77,"Spectra"],
+["6OSMDCP",'6" Outside Strip Miter Designer Copper',"Corners & Miters","each",14.54,"Spectra"],
+["6ISMDCP",'6" Inside Strip Miter Designer Copper',"Corners & Miters","each",14.54,"Spectra"],
+["5OBS",'5" Outside Bay Strip Miter',"Corners & Miters","each",3.32,"Spectra"],
+["5IBS",'5" Inside Bay Strip Miter',"Corners & Miters","each",3.32,"Spectra"],
+["6OBS",'6" Outside Bay Strip Miter',"Corners & Miters","each",5.86,"Spectra"],
+["6IBS",'6" Inside Bay Strip Miter',"Corners & Miters","each",5.86,"Spectra"],
+["6HRINM",'6" Inside Half-Round Box Miter',"Corners & Miters","each",66.76,"Spectra"],
+["6HROTM",'6" Outside Half-Round Box Miter',"Corners & Miters","each",66.76,"Spectra"],
+["7OSM",'7" Outside Strip Miter',"Corners & Miters","each",9.65,"Spectra"],
+["7ISM",'7" Inside Strip Miter',"Corners & Miters","each",9.65,"Spectra"],
+// Spectra — Outlets
+["3ROT",'2"x3" Rectangular Outlet',"Outlets & Drops","each",0.62,"Spectra"],
+["4ROT",'3"x4" Rectangular Outlet',"Outlets & Drops","each",0.88,"Spectra"],
+["4OVOT",'4" Oval Outlet',"Outlets & Drops","each",0.86,"Spectra"],
+["4HROTW",'4" Round Outlet for Half-Round',"Outlets & Drops","each",3.48,"Spectra"],
+["234R",'2-3/4" Round Outlet',"Outlets & Drops","each",0.97,"Spectra"],
+["238R",'2-3/8" Round Outlet',"Outlets & Drops","each",0.97,"Spectra"],
+["338R",'3-3/8" Round Outlet',"Outlets & Drops","each",1.75,"Spectra"],
+["5WOTAL",'4"x5" Rectangular Outlet',"Outlets & Drops","each",5.95,"Spectra"],
+// Spectra — Hangers
+["5HNS",'5" Hidden Hanger No Screw',"Hangers & Hardware","each",0.26,"Spectra"],
+["5UHNC",'5" Ultra Hanger No Clip',"Hangers & Hardware","each",0.29,"Spectra"],
+["5HFH",'5" Speed Screw Hanger',"Hangers & Hardware","each",0.54,"Spectra"],
+["5HFEH",'5" Hang Fast Elite Hanger',"Hangers & Hardware","each",0.63,"Spectra"],
+["6HNS",'6" Hidden Hanger No Strap',"Hangers & Hardware","each",0.39,"Spectra"],
+["6SSH",'6" Speed Screw Hanger',"Hangers & Hardware","each",0.61,"Spectra"],
+["6HFEH",'6" Hang Fast Elite Hanger',"Hangers & Hardware","each",0.68,"Spectra"],
+["6HRHHAL",'6" Half-Round Hidden Hanger Aluminum',"Hangers & Hardware","each",1.31,"Spectra"],
+["7HNS",'7" Hidden Hanger No Strap',"Hangers & Hardware","each",1.43,"Spectra"],
+["7HFEH",'7" Elite Quick-Screw Hanger',"Hangers & Hardware","each",2.05,"Spectra"],
+["7SPKW","#7 Spike White","Hangers & Hardware","each",0.11,"Spectra"],
+["8SPKW","#8 Spike White","Hangers & Hardware","each",0.13,"Spectra"],
+["SCLIPBZ","Spring Clip Bronze","Hangers & Hardware","each",1.19,"Spectra"],
+["SCLIPW","Spring Clip White","Hangers & Hardware","each",1.19,"Spectra"],
+["TS",'T Bar Strap 5"',"Hangers & Hardware","each",0.20,"Spectra"],
+// Spectra — Paint & Sealants
+["TUP","Touch-Up Paint","Paint & Sealants","each",7.50,"Spectra"],
+["G2320AL","Geocel 2320 10.3oz Aluminum","Paint & Sealants","each",5.50,"Spectra"],
+["G2320W","Geocel 2320 10.3oz White","Paint & Sealants","each",5.50,"Spectra"],
+["G2300BZ","Geocel 2300 10.3oz Bronze","Paint & Sealants","each",5.50,"Spectra"],
+["G2300CL","Geocel 2300 10.3oz Clear","Paint & Sealants","each",5.50,"Spectra"],
+["G2300W","Geocel 2300 10.3oz White","Paint & Sealants","each",5.50,"Spectra"],
+// Spectra — Guards
+["GG5SSLB",'5" Stainless Steel Guard 4ft',"Gutter Guards","each",9.54,"Spectra"],
+["GG6SSLB",'6" Stainless Steel Guard 4ft',"Gutter Guards","each",10.99,"Spectra"],
+["LPF","Gutter Lock 4ft","Gutter Guards","each",13.21,"Spectra"],
+["LPHF","Gutter Lock Hi-Flow 4ft","Gutter Guards","each",12.82,"Spectra"],
+// Spectra — Fasteners
+["812",'Zip Screws #8x1/2" (100/bag)',"Fasteners & Screws","bag",2.08,"Spectra"],
+["10112H",'Hex Screws #10x1-1/2" (1000/bx)',"Fasteners & Screws","box",56.64,"Spectra"],
+["DPB","Diamond Downpipe Band","Fasteners & Screws","each",0.51,"Spectra"],
+["3DPCLIP","Downpipe Clip 2x3","Fasteners & Screws","each",0.51,"Spectra"],
+["4DPCLIP","Downpipe Clip 3x4","Fasteners & Screws","each",0.51,"Spectra"],
+// Spectra — Accessories
+["4CBOX",'4" Conductor Box Painted Aluminum',"Accessories","each",121.37,"Spectra"],
+["SBLOCK","Splash Block","Accessories","each",4.20,"Spectra"],
+["SBLOCK1212",'Concrete Splash Block 12"x12"',"Accessories","each",5.32,"Spectra"],
+["4ADA",'4" Downpipe Adapter',"Accessories","each",5.01,"Spectra"],
+["DFADABK","Direct Flow Adapter Black","Accessories","each",4.22,"Spectra"],
+["FLASH3W","Gutter Apron Aluminum White","Materials","each",4.00,"Spectra"],
+["FLASHBK","Gutter Apron Aluminum Black","Materials","each",4.00,"Spectra"],
+["WEDGEW",'5" Gutter Wedge White',"Accessories","each",0.78,"Spectra"],
+["6WEDGEW",'6" Gutter Wedge White',"Accessories","each",1.06,"Spectra"],
+["TWEDGE","T-Wedge #4400","Accessories","each",0.78,"Spectra"],
+["TWEDGE-J","Jumbo T-Wedge #4500","Accessories","each",2.55,"Spectra"],
+// US Aluminum — Hangers
+["USA-5ELITE-C",'5" Elite Hanger w/ Clip .063',"Hangers & Hardware","each",0.34,"US Aluminum"],
+["USA-5ELITE-NC",'5" Elite Hanger No Clip .063',"Hangers & Hardware","each",0.33,"US Aluminum"],
+["USA-5HD-C",'5" Heavy Duty Hanger w/ Clip',"Hangers & Hardware","each",0.36,"US Aluminum"],
+["USA-5HD-NC",'5" Heavy Duty Hanger No Clip',"Hangers & Hardware","each",0.35,"US Aluminum"],
+["USA-5SS-C",'5" Speed Screw Hanger w/ Clip',"Hangers & Hardware","each",0.52,"US Aluminum"],
+["USA-5SS-NC",'5" Speed Screw Hanger No Clip',"Hangers & Hardware","each",0.51,"US Aluminum"],
+["USA-5UMAXX-C",'5" Ultra Maxx Hanger w/ Clip',"Hangers & Hardware","each",0.29,"US Aluminum"],
+["USA-5UMAXX-NC",'5" Ultra Maxx Hanger No Clip',"Hangers & Hardware","each",0.28,"US Aluminum"],
+["USA-5DRB-C",'5" Double Rib Hanger w/ Clip',"Hangers & Hardware","each",0.27,"US Aluminum"],
+["USA-5DRB-NC",'5" Double Rib Hanger No Clip',"Hangers & Hardware","each",0.26,"US Aluminum"],
+["USA-6SUP-C",'6" Supreme Hanger w/ Clip',"Hangers & Hardware","each",0.45,"US Aluminum"],
+["USA-6SUP-NC",'6" Supreme Hanger No Clip',"Hangers & Hardware","each",0.44,"US Aluminum"],
+["USA-6HNG-C",'6" Hanger w/ Clip .053',"Hangers & Hardware","each",0.36,"US Aluminum"],
+["USA-6HNG-NC",'6" Hanger No Clip .053',"Hangers & Hardware","each",0.35,"US Aluminum"],
+["USA-6SS-C",'6" Speed Screw Hanger w/ Clip',"Hangers & Hardware","each",0.58,"US Aluminum"],
+["USA-6SS-NC",'6" Speed Screw Hanger No Clip',"Hangers & Hardware","each",0.57,"US Aluminum"],
+["USA-6UMAXX-C",'6" Ultra Maxx Hanger w/ Clip',"Hangers & Hardware","each",0.36,"US Aluminum"],
+["USA-6UMAXX-NC",'6" Ultra Maxx Hanger No Clip',"Hangers & Hardware","each",0.35,"US Aluminum"],
+["USA-6DRB-C",'6" Double Rib Hanger w/ Clip',"Hangers & Hardware","each",0.35,"US Aluminum"],
+["USA-6DRB-NC",'6" Double Rib Hanger No Clip',"Hangers & Hardware","each",0.34,"US Aluminum"],
+["USA-7SS-C",'7" Speed Screw Hanger w/ Clip',"Hangers & Hardware","each",1.84,"US Aluminum"],
+["USA-7SS-NC",'7" Speed Screw Hanger No Clip',"Hangers & Hardware","each",1.76,"US Aluminum"],
+["USA-HRSTRAP","Universal Twist Roof Strap","Hangers & Hardware","each",0.44,"US Aluminum"],
+["USA-HRHAN","Half Round Hanger","Hangers & Hardware","each",1.71,"US Aluminum"],
+// US Aluminum — Screws
+["USA-812-PTD",'#8x1/2" Painted Screw (100/bag)',"Fasteners & Screws","bag",2.06,"US Aluminum"],
+["USA-812-PTD-1000",'#8x1/2" Painted Screw (1000/bx)',"Fasteners & Screws","box",17.47,"US Aluminum"],
+["USA-812-SS",'#8x1/2" Painted Stainless (100/bag)',"Fasteners & Screws","bag",5.10,"US Aluminum"],
+["USA-812-MILL",'#8x1/2" Mill Screw (1000/bx)',"Fasteners & Screws","box",16.13,"US Aluminum"],
+["USA-10112-HHX",'#10x1-1/2" Hi Hex Screw (1000/bx)',"Fasteners & Screws","box",31.81,"US Aluminum"],
+["USA-10112-NEOPR",'#10x1-1/2" Hi Hex w/ Neoprene (1000/bx)',"Fasteners & Screws","box",38.27,"US Aluminum"],
+["USA-10112-RUSP",'#10x1-1/2" Ruspert Screw (1000/bx)',"Fasteners & Screws","box",47.84,"US Aluminum"],
+["USA-10112-SS",'#10x1-1/2" Hi Hex Stainless (1000/bx)',"Fasteners & Screws","box",78.77,"US Aluminum"],
+["USA-102-HHX",'#10x2" Hi Hex Screw (1000/bx)',"Fasteners & Screws","box",39.05,"US Aluminum"],
+["USA-POPRIVET","Aluminum Pop Rivets (1000/bx)","Fasteners & Screws","box",37.41,"US Aluminum"],
+// US Aluminum — End Caps
+["USA-5EC",'5" End Cap .019 Deep Draw',"End Caps","each",0.51,"US Aluminum"],
+["USA-6EC",'6" End Cap .019 Deep Draw',"End Caps","each",0.84,"US Aluminum"],
+// US Aluminum — Outlets
+["USA-OUT-238-POP",'2-3/8"/2-3/4" Pop-In Outlet',"Outlets & Drops","each",0.72,"US Aluminum"],
+["USA-OUT-238-WF",'2-3/8"/2-3/4" Wide Flange Outlet',"Outlets & Drops","each",0.75,"US Aluminum"],
+["USA-OUT-2X3",'2"x3" Rectangular Outlet',"Outlets & Drops","each",0.95,"US Aluminum"],
+["USA-OUT-3X4",'3"x4" Rectangular Outlet',"Outlets & Drops","each",1.39,"US Aluminum"],
+["USA-OUT-338-POP",'3-3/8" Pop-In Outlet',"Outlets & Drops","each",2.08,"US Aluminum"],
+["USA-OUT-338",'3-3/8" Outlet',"Outlets & Drops","each",1.24,"US Aluminum"],
+["USA-OUT-2X3-OV",'2"x3" Oval Outlet',"Outlets & Drops","each",1.04,"US Aluminum"],
+["USA-OUT-3X4-OV",'3"x4" Oval Outlet',"Outlets & Drops","each",1.39,"US Aluminum"],
+["USA-OUT-3X4-OV-6",'3"x4" Oval Outlet for 6"/7" Gutter',"Outlets & Drops","each",1.50,"US Aluminum"],
+["USA-OUT-4X5",'4"x5" Rectangular Outlet',"Outlets & Drops","each",8.90,"US Aluminum"],
+// US Aluminum — Accessories
+["USA-WEDGE5",'5" Gutter Wedge',"Accessories","each",0.87,"US Aluminum"],
+["USA-WEDGE6",'6" Gutter Wedge',"Accessories","each",1.24,"US Aluminum"],
+["USA-TWEDGE5",'5" T-Wedge',"Accessories","each",1.02,"US Aluminum"],
+["USA-TWEDGE6",'6" T-Wedge',"Accessories","each",1.51,"US Aluminum"],
+["USA-PIPECLIP3",'3" Pipe Clip',"Accessories","each",0.52,"US Aluminum"],
+["USA-PIPECLIP4",'4" Pipe Clip',"Accessories","each",0.67,"US Aluminum"],
+["USA-PIPBAND","Diamond Pipe Band","Accessories","each",0.52,"US Aluminum"],
+["USA-STRPMIT5",'5" Strip Mitre .030 Alum',"Corners & Miters","each",2.71,"US Aluminum"],
+["USA-STRPMIT6",'6" Strip Mitre .030 Alum',"Corners & Miters","each",5.35,"US Aluminum"],
+["USA-BAYSTRIP5",'5" Bay Strip Mitre',"Corners & Miters","each",5.18,"US Aluminum"],
+["USA-BAYSTRIP6",'6" Bay Strip Mitre',"Corners & Miters","each",11.16,"US Aluminum"],
+["USA-BOXMIT5",'5" Box Mitre White',"Corners & Miters","each",7.99,"US Aluminum"],
+["USA-BOXMIT6",'6" Box Mitre White',"Corners & Miters","each",19.49,"US Aluminum"],
+// US Aluminum — Hydro Flo
+["USA-HF-5-MILL",'Hydro Flo 5" Mill',"Gutter Guards","ft",2.49,"US Aluminum"],
+["USA-HF-5-BLK",'Hydro Flo 5" Black',"Gutter Guards","ft",2.99,"US Aluminum"],
+["USA-HF-6-MILL",'Hydro Flo 6" Mill',"Gutter Guards","ft",2.64,"US Aluminum"],
+["USA-HF-6-BLK",'Hydro Flo 6" Black',"Gutter Guards","ft",3.24,"US Aluminum"],
+["USA-HF-EC-10",'Hydro Flo End Cap 5"/6" (10pc)',"Gutter Guards","box",6.80,"US Aluminum"],
+["USA-HF-MIT5-IN",'Hydro Flo 5" Inside Mitre (5pc)',"Gutter Guards","box",31.50,"US Aluminum"],
+["USA-HF-MIT5-OUT",'Hydro Flo 5" Outside Mitre (5pc)',"Gutter Guards","box",31.50,"US Aluminum"],
+["USA-HF-MIT6-IN",'Hydro Flo 6" Inside Mitre (5pc)',"Gutter Guards","box",37.80,"US Aluminum"],
+["USA-HF-MIT6-OUT",'Hydro Flo 6" Outside Mitre (5pc)',"Gutter Guards","box",37.80,"US Aluminum"],
+// US Aluminum — Shur Flo
+["USA-SF-5-4-MILL",'Shur Flo 5" 4ft Mill',"Gutter Guards","ft",1.35,"US Aluminum"],
+["USA-SF-5-4-BW",'Shur Flo 5" 4ft Black/White',"Gutter Guards","ft",1.58,"US Aluminum"],
+["USA-SF-6-4-MILL",'Shur Flo 6" 4ft Mill',"Gutter Guards","ft",1.66,"US Aluminum"],
+["USA-SF-6-4-BW",'Shur Flo 6" 4ft Black/White',"Gutter Guards","ft",1.78,"US Aluminum"],
+["USA-SF-5-6-MILL",'Shur Flo 5" 6ft Mill',"Gutter Guards","ft",1.39,"US Aluminum"],
+["USA-SF-5-6-BW",'Shur Flo 5" 6ft Black/White',"Gutter Guards","ft",1.62,"US Aluminum"],
+["USA-SF-6-6-MILL",'Shur Flo 6" 6ft Mill',"Gutter Guards","ft",1.70,"US Aluminum"],
+["USA-SF-6-6-BW",'Shur Flo 6" 6ft Black/White',"Gutter Guards","ft",1.82,"US Aluminum"],
+["USA-SF-5-SD-MILL",'Shur Flo 5" Step Down Mill',"Gutter Guards","ft",1.42,"US Aluminum"],
+["USA-SF-5-SD-BW",'Shur Flo 5" Step Down Black/White',"Gutter Guards","ft",1.66,"US Aluminum"],
+["USA-SF-6-SD-MILL",'Shur Flo 6" Step Down Mill',"Gutter Guards","ft",1.78,"US Aluminum"],
+["USA-SF-6-SD-BW",'Shur Flo 6" Step Down Black/White',"Gutter Guards","ft",1.84,"US Aluminum"],
+["USA-SF-7-BW",'Shur Flo 7" Black/White',"Gutter Guards","ft",1.99,"US Aluminum"],
+// US Aluminum — UltraFlo
+["USA-UF-5-MICROX",'UltraFlo MicroX 5" 4ft',"Gutter Guards","ft",1.18,"US Aluminum"],
+["USA-UF-6-MICROX",'UltraFlo MicroX 6" 4ft',"Gutter Guards","ft",1.26,"US Aluminum"],
+["USA-UF-7-MICROX",'UltraFlo MicroX 7" 4ft',"Gutter Guards","ft",1.75,"US Aluminum"],
+["USA-UF-5-SH",'UltraFlo Small Hole 5" 4ft',"Gutter Guards","ft",0.97,"US Aluminum"],
+["USA-UF-6-SH",'UltraFlo Small Hole 6" 4ft',"Gutter Guards","ft",1.04,"US Aluminum"],
+["USA-UF-7-SH",'UltraFlo Small Hole 7" 4ft',"Gutter Guards","ft",1.33,"US Aluminum"],
+["USA-UF-5-LH",'UltraFlo Large Hole 5" 4ft',"Gutter Guards","ft",0.92,"US Aluminum"],
+["USA-UF-6-LH",'UltraFlo Large Hole 6" 4ft',"Gutter Guards","ft",0.97,"US Aluminum"],
+// US Aluminum — Leaf Shelter / Pro Flo / Stealth
+["USA-LS-5",'Leaf Shelter 5"',"Gutter Guards","ft",1.86,"US Aluminum"],
+["USA-LS-6",'Leaf Shelter 6"',"Gutter Guards","ft",2.34,"US Aluminum"],
+["USA-LS-EC","Leaf Shelter End Cap L/R","Gutter Guards","each",3.36,"US Aluminum"],
+["USA-LS-PORT","Leaf Shelter Inside Port","Gutter Guards","each",6.13,"US Aluminum"],
+["5PF",'Pro Flo 5" 4ft',"Gutter Guards","ft",2.18,"US Aluminum"],
+["6PF",'Pro Flo 6" 4ft',"Gutter Guards","ft",2.30,"US Aluminum"],
+["SG1","Stealth Gutter Defense 4ft","Gutter Guards","ft",3.24,"US Aluminum"],
+// US Aluminum — Copper
+["USA-CU-EC-5",'Copper End Cap 5"',"Copper Gutters","each",5.06,"US Aluminum"],
+["USA-CU-EC-6",'Copper End Cap 6"',"Copper Gutters","each",6.67,"US Aluminum"],
+["USA-CU-PIPBAND","Copper Pipe Band","Copper Gutters","each",2.84,"US Aluminum"],
+["USA-CU-SCREW",'#8x1/2" Copper Plated Screws (100/bag)',"Copper Gutters","bag",23.07,"US Aluminum"],
+// OGG — One Gutter Guard
+["OGG-5-FM",'One Gutter Guard 5" Fascia Mount',"Gutter Guards","ft",4.15,"OGG"],
+["OGG-6-FM",'One Gutter Guard 6" Fascia Mount',"Gutter Guards","ft",4.28,"OGG"],
+["OGG-5-US",'One Gutter Guard 5" Under Shingle',"Gutter Guards","ft",4.28,"OGG"],
+["OGG-6-US",'One Gutter Guard 6" Under Shingle',"Gutter Guards","ft",4.39,"OGG"],
+["OGG-5-SB",'One Gutter Guard 5" Short Back',"Gutter Guards","ft",4.18,"OGG"],
+["OGG-6-SB",'One Gutter Guard 6" Short Back',"Gutter Guards","ft",4.28,"OGG"],
+["OGG-EC","One Gutter Guard End Caps (20pk)","Gutter Guards","box",39.99,"OGG"],
+["OGG-MESH","One Gutter Guard Mesh Insert 4ft","Gutter Guards","each",8.00,"OGG"],
+];
+
+const SEED_ITEMS=[
+  ...RAW_SKUS.map(([sku,name,cat,unit,cost,sup],i)=>({id:`raw${i}`,sku,name,category:cat,unit,qty:0,minQty:0,cost,supplier:sup})),
+  ...PRICED_SKUS.map(([sku,name,cat,unit,cost,sup],i)=>({id:`p${i}`,sku,name,category:cat,unit,qty:0,minQty:0,cost,supplier:sup})),
+];
+
+// ── UI Primitives ─────────────────────────────────────────────────────────────
+const Badge=({color,children,small})=>(
+  <span style={{background:color+"22",color,border:`1px solid ${color}44`,borderRadius:4,padding:small?"1px 6px":"2px 8px",fontSize:small?10:11,fontWeight:700,letterSpacing:".4px",textTransform:"uppercase",whiteSpace:"nowrap"}}>{children}</span>
+);
+const Btn=({onClick,children,variant="primary",small,disabled,style={}})=>{
+  const base={border:"none",borderRadius:6,fontFamily:"'DM Sans',system-ui,sans-serif",fontWeight:700,cursor:disabled?"not-allowed":"pointer",padding:small?"6px 14px":"10px 20px",fontSize:small?12:14,opacity:disabled?.5:1,...style};
+  const v={primary:{background:C.accent,color:"#000"},secondary:{background:C.surfaceAlt,color:C.text,border:`1px solid ${C.border}`},danger:{background:C.red+"22",color:C.red,border:`1px solid ${C.red}44`},ghost:{background:"transparent",color:C.textMuted,border:`1px solid ${C.border}`},success:{background:C.green+"22",color:C.green,border:`1px solid ${C.green}44`}};
+  return <button onClick={onClick} disabled={disabled} style={{...base,...(v[variant]||v.primary)}}>{children}</button>;
+};
+const Inp=({value,onChange,placeholder,type="text",style={}})=>(
+  <input type={type} value={value} onChange={onChange} placeholder={placeholder}
+    style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:6,color:C.text,padding:"9px 12px",fontSize:13,fontFamily:"'DM Sans',system-ui,sans-serif",outline:"none",width:"100%",boxSizing:"border-box",...style}}/>
+);
+const Sel=({value,onChange,children,style={}})=>(
+  <select value={value} onChange={onChange}
+    style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:6,color:C.text,padding:"9px 12px",fontSize:13,fontFamily:"'DM Sans',system-ui,sans-serif",outline:"none",width:"100%",boxSizing:"border-box",...style}}>
+    {children}
+  </select>
+);
+const Card=({children,style={}})=>(
+  <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:20,...style}}>{children}</div>
+);
+const Modal=({title,onClose,children,wide})=>(
+  <div style={{position:"fixed",inset:0,background:"#000c",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={onClose}>
+    <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:28,width:"100%",maxWidth:wide?780:540,maxHeight:"92vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+        <span style={{fontWeight:800,fontSize:17}}>{title}</span>
+        <button onClick={onClose} style={{background:"none",border:"none",color:C.textMuted,fontSize:22,cursor:"pointer",lineHeight:1}}>✕</button>
+      </div>
+      {children}
+    </div>
+  </div>
+);
+
+// ── App Shell ─────────────────────────────────────────────────────────────────
+function App(){
+  const [tab,setTab]=useState("dashboard");
+  const [items,setItems]=useState(()=>lsGet("gb:items")||SEED_ITEMS);
+  const [jobs,setJobs]=useState(()=>lsGet("gb:jobs")||[]);
+  const [logs,setLogs]=useState(()=>lsGet("gb:logs")||[]);
+  const [pending,setPending]=useState(()=>lsGet("gb:pending")||[]);
+  const [toast,setToast]=useState(null);
+
+  useEffect(()=>lsSet("gb:items",items),[items]);
+  useEffect(()=>lsSet("gb:jobs",jobs),[jobs]);
+  useEffect(()=>lsSet("gb:logs",logs),[logs]);
+  useEffect(()=>lsSet("gb:pending",pending),[pending]);
+
+  const notify=(msg,color=C.green)=>{setToast({msg,color});setTimeout(()=>setToast(null),3500);};
+
+  const NAV=[
+    {id:"dashboard",icon:"◈",label:"Dashboard"},
+    {id:"inventory",icon:"▦",label:"Inventory"},
+    {id:"usage",icon:"◎",label:"Log Usage"},
+    {id:"pending",icon:"📋",label:`Pending${pending.length>0?` (${pending.length})`:""}`,alert:pending.length>0},
+    {id:"history",icon:"≡",label:"History"},
+    {id:"jobs",icon:"◉",label:"Jobs"},
+  ];
+
+  return(
+    <div style={{background:C.bg,minHeight:"100vh"}}>
+      {toast&&(
+        <div style={{position:"fixed",top:16,right:16,zIndex:9999,background:toast.color+"22",border:`1px solid ${toast.color}55`,color:toast.color,borderRadius:8,padding:"12px 20px",fontWeight:700,fontSize:13,boxShadow:"0 4px 20px #0008",maxWidth:320}}>
+          {toast.msg}
+        </div>
+      )}
+
+      {/* Nav */}
+      <div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,padding:"0 20px",display:"flex",alignItems:"center",gap:4,position:"sticky",top:0,zIndex:100,flexWrap:"wrap"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,padding:"12px 0",marginRight:12}}>
+          <div style={{width:32,height:32,background:C.accent,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17}}>🏗</div>
+          <div>
+            <div style={{fontWeight:800,fontSize:15,letterSpacing:"-.3px"}}>TradeStock</div>
+            <div style={{fontSize:9,color:C.textDim,letterSpacing:.8,textTransform:"uppercase"}}>GutterBrothers · Ft. Myers</div>
+          </div>
+        </div>
+        {NAV.map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{background:"none",border:"none",cursor:"pointer",color:tab===t.id?C.accent:t.alert?C.red:C.textMuted,fontWeight:tab===t.id?800:500,fontSize:13,padding:"16px 10px",borderBottom:tab===t.id?`2px solid ${C.accent}`:t.alert?`2px solid ${C.red}`:"2px solid transparent",fontFamily:"'DM Sans',system-ui,sans-serif",transition:"color .15s",whiteSpace:"nowrap"}}>
+            {t.label}
+          </button>
+        ))}
+        <div style={{marginLeft:"auto",fontSize:11,color:C.textDim,fontFamily:"'DM Mono',monospace",padding:"0 4px"}}>
+          {items.length} SKUs
+        </div>
+      </div>
+
+      <div style={{padding:"20px",maxWidth:1400,margin:"0 auto"}}>
+        {tab==="dashboard"&&<Dashboard items={items} logs={logs} jobs={jobs} pending={pending}/>}
+        {tab==="inventory"&&<Inventory items={items} setItems={setItems} notify={notify}/>}
+        {tab==="usage"&&<UsageLog items={items} setItems={setItems} jobs={jobs} logs={logs} setLogs={setLogs} notify={notify}/>}
+        {tab==="pending"&&<PendingReview pending={pending} setPending={setPending} items={items} setItems={setItems} logs={logs} setLogs={setLogs} jobs={jobs} notify={notify}/>}
+        {tab==="history"&&<History logs={logs} jobs={jobs}/>}
+        {tab==="jobs"&&<Jobs jobs={jobs} setJobs={setJobs} notify={notify}/>}
+      </div>
+    </div>
+  );
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+function Dashboard({items,logs,jobs,pending}){
+  const low=items.filter(i=>i.minQty>0&&i.qty<=i.minQty);
+  const totalVal=items.reduce((s,i)=>s+i.qty*(i.cost||0),0);
+  const byCat={};items.forEach(i=>{const c=i.category;byCat[c]=(byCat[c]||0)+1;});
+  const bySup={};items.forEach(i=>{const s=i.supplier||"Other";bySup[s]=(bySup[s]||0)+1;});
+  const recent=[...logs].sort((a,b)=>b.ts-a.ts).slice(0,6);
+
+  const Stat=({label,value,sub,color=C.accent})=>(
+    <Card style={{flex:"1 1 140px"}}>
+      <div style={{color:C.textMuted,fontSize:10,fontWeight:700,letterSpacing:1.2,textTransform:"uppercase",marginBottom:8}}>{label}</div>
+      <div style={{fontSize:28,fontWeight:800,color,letterSpacing:"-.5px",lineHeight:1}}>{value}</div>
+      <div style={{fontSize:12,color:C.textDim,marginTop:5}}>{sub}</div>
+    </Card>
+  );
+
+  return(
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:20}}>
+        <h2 style={{fontWeight:800,fontSize:22,letterSpacing:"-.4px"}}>Dashboard</h2>
+        <span style={{color:C.textDim,fontSize:12}}>{new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})}</span>
+      </div>
+
+      <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:24}}>
+        <Stat label="Total SKUs" value={items.length} sub="items in system"/>
+        <Stat label="Est. Value" value={`$${totalVal.toLocaleString("en",{maximumFractionDigits:0})}`} sub="cost basis on hand" color={C.teal}/>
+        <Stat label="Low Stock" value={low.length} sub="need reorder" color={low.length>0?C.red:C.green}/>
+        <Stat label="Active Jobs" value={jobs.filter(j=>j.status==="active").length} sub="in progress" color={C.blue}/>
+        <Stat label="Usage Logs" value={logs.length} sub="total entries"/>
+        {pending.length>0&&<Stat label="Pending Review" value={pending.length} sub="crew submissions" color={C.red}/>}
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(300px,1fr))",gap:20,marginBottom:20}}>
+        <Card>
+          <div style={{fontWeight:800,marginBottom:14,fontSize:14}}>SKUs by Supplier</div>
+          {Object.entries(bySup).sort((a,b)=>b[1]-a[1]).map(([s,n])=>(
+            <div key={s} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:`1px solid ${C.border}`}}>
+              <Badge color={SUP_COLOR[s]||C.textMuted}>{s}</Badge>
+              <span style={{fontFamily:"'DM Mono',monospace",fontWeight:700,fontSize:13}}>{n}</span>
+            </div>
+          ))}
+        </Card>
+
+        <Card>
+          <div style={{fontWeight:800,marginBottom:14,fontSize:14,color:low.length>0?C.red:C.green}}>
+            {low.length>0?`⚠ ${low.length} Low Stock Alert${low.length>1?"s":""}` :"✓ Stock Healthy"}
+          </div>
+          {low.length===0
+            ?<div style={{color:C.textMuted,fontSize:13}}>All items are above minimum levels.</div>
+            :low.slice(0,8).map(it=>(
+              <div key={it.id} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:`1px solid ${C.border}`}}>
+                <div>
+                  <div style={{fontWeight:700,fontSize:12}}>{it.name}</div>
+                  <div style={{fontSize:10,color:C.textMuted,fontFamily:"monospace"}}>{it.sku}</div>
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <div style={{color:C.red,fontWeight:800,fontSize:13}}>{it.qty} {it.unit}</div>
+                  <div style={{fontSize:10,color:C.textDim}}>min: {it.minQty}</div>
+                </div>
+              </div>
+            ))}
+        </Card>
+
+        <Card>
+          <div style={{fontWeight:800,marginBottom:14,fontSize:14}}>Recent Activity</div>
+          {recent.length===0
+            ?<div style={{color:C.textMuted,fontSize:13}}>No usage logged yet.</div>
+            :recent.map(log=>(
+              <div key={log.id} style={{padding:"7px 0",borderBottom:`1px solid ${C.border}`}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:2}}>
+                  <span style={{fontWeight:700,fontSize:13}}>{log.crewName}</span>
+                  <span style={{color:C.textDim,fontSize:11}}>{new Date(log.ts).toLocaleDateString()}</span>
+                </div>
+                <div style={{color:C.textMuted,fontSize:12}}>{log.jobName} · {log.items.length} item{log.items.length!==1?"s":""}</div>
+              </div>
+            ))}
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// ── Inventory ─────────────────────────────────────────────────────────────────
+function Inventory({items,setItems,notify}){
+  const [search,setSearch]=useState("");
+  const [cat,setCat]=useState("All");
+  const [sup,setSup]=useState("All");
+  const [modal,setModal]=useState(null);
+  const [adjModal,setAdjModal]=useState(null);
+  const [page,setPage]=useState(1);
+  const PS=50;
+
+  const emptyForm={sku:"",name:"",category:"K-Style Gutters",unit:"each",qty:"",minQty:"",cost:"",supplier:""};
+  const [form,setForm]=useState(emptyForm);
+
+  const visible=items.filter(i=>{
+    if(cat!=="All"&&i.category!==cat)return false;
+    if(sup!=="All"&&(i.supplier||"Other")!==sup)return false;
+    const q=search.toLowerCase();
+    return !q||i.name.toLowerCase().includes(q)||i.sku.toLowerCase().includes(q);
+  });
+  const totalPages=Math.ceil(visible.length/PS);
+  const paged=visible.slice((page-1)*PS,page*PS);
+  useEffect(()=>setPage(1),[search,cat,sup]);
+
+  const saveItem=()=>{
+    if(!form.name.trim())return;
+    const e={...form,qty:Number(form.qty)||0,minQty:Number(form.minQty)||0,cost:Number(form.cost)||0};
+    if(modal==="add"){setItems(p=>[{...e,id:"i"+Date.now()},...p]);notify("Item added!");}
+    else{setItems(p=>p.map(i=>i.id===modal.id?{...i,...e}:i));notify("Updated!");}
+    setModal(null);
+  };
+
+  const exportExcel=()=>{
+    const ws=XLSX.utils.json_to_sheet(items.map(i=>({SKU:i.sku,Name:i.name,Category:i.category,Supplier:i.supplier||"",Unit:i.unit,Qty:i.qty,MinQty:i.minQty,Cost:i.cost||0,Value:(i.qty*(i.cost||0)).toFixed(2)})));
+    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Inventory");
+    XLSX.writeFile(wb,`GutterBrothers-Inventory-${new Date().toISOString().slice(0,10)}.xlsx`);
+    notify("Exported!");
+  };
+
+  const importExcel=async(e)=>{
+    const file=e.target.files[0];if(!file)return;
+    const wb=XLSX.read(await file.arrayBuffer());
+    const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+    const newItems=rows.map((r,idx)=>({
+      id:"xl"+Date.now()+idx,
+      sku:String(r.SKU||r.sku||r.Code||""),
+      name:r.Name||r.name||r.Item||`Item ${idx+1}`,
+      category:r.Category||r.category||"Other",
+      unit:r.Unit||r.unit||"each",
+      qty:Number(r.Qty||r.qty||r.Quantity||0),
+      minQty:Number(r.MinQty||r.minQty||r.Min||0),
+      cost:Number(r.Cost||r.cost||r.Price||0),
+      supplier:r.Supplier||r.supplier||"",
+    }));
+    setItems(p=>[...p,...newItems]);
+    notify(`Imported ${newItems.length} items!`);
+    e.target.value="";
+  };
+
+  const fld=(label,key,type="text",ph="")=>(
+    <div>
+      <label style={{fontSize:12,color:C.textMuted,display:"block",marginBottom:4}}>{label}</label>
+      <Inp type={type} value={form[key]||""} onChange={e=>setForm(f=>({...f,[key]:e.target.value}))} placeholder={ph}/>
+    </div>
+  );
+
+  return(
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,gap:12,flexWrap:"wrap"}}>
+        <h2 style={{fontWeight:800,fontSize:22,margin:0}}>
+          Inventory
+          <span style={{fontSize:14,color:C.textMuted,fontWeight:400,marginLeft:10}}>{visible.length} items</span>
+        </h2>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          <Btn variant="ghost" small onClick={exportExcel}>⬇ Export</Btn>
+          <label style={{cursor:"pointer"}}>
+            <Btn variant="ghost" small onClick={()=>{}}>⬆ Import</Btn>
+            <input type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={importExcel}/>
+          </label>
+          <Btn small onClick={()=>{setForm(emptyForm);setModal("add");}}>+ Add Item</Btn>
+        </div>
+      </div>
+
+      <div style={{display:"flex",gap:10,marginBottom:14,flexWrap:"wrap"}}>
+        <Inp value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search name or SKU…" style={{maxWidth:280}}/>
+        <Sel value={cat} onChange={e=>setCat(e.target.value)} style={{maxWidth:200}}>
+          <option value="All">All Categories</option>
+          {CATEGORIES.map(c=><option key={c}>{c}</option>)}
+        </Sel>
+        <Sel value={sup} onChange={e=>setSup(e.target.value)} style={{maxWidth:160}}>
+          {SUPPLIERS.map(s=><option key={s}>{s}</option>)}
+        </Sel>
+      </div>
+
+      <Card style={{padding:0,overflow:"hidden",marginBottom:10}}>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <thead>
+              <tr style={{borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
+                {["SKU","Name","Category","Supplier","Qty","Min","Cost $","Value","Status",""].map(h=>(
+                  <th key={h} style={{padding:"9px 12px",textAlign:"left",color:C.textMuted,fontWeight:700,fontSize:10,letterSpacing:.9,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {paged.map((item,idx)=>{
+                const low=item.minQty>0&&item.qty<=item.minQty;
+                return(
+                  <tr key={item.id} style={{borderBottom:`1px solid ${C.border}22`,background:idx%2===0?"transparent":C.bg+"50"}}>
+                    <td style={{padding:"8px 12px",fontFamily:"monospace",fontSize:10,color:C.textMuted}}>{item.sku||"—"}</td>
+                    <td style={{padding:"8px 12px",fontWeight:600,maxWidth:240,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.name}</td>
+                    <td style={{padding:"8px 12px"}}><Badge color={CAT_COLOR[item.category]||C.textMuted} small>{item.category}</Badge></td>
+                    <td style={{padding:"8px 12px"}}>{item.supplier?<Badge color={SUP_COLOR[item.supplier]||C.textMuted} small>{item.supplier}</Badge>:<span style={{color:C.textDim}}>—</span>}</td>
+                    <td style={{padding:"8px 12px",fontWeight:800,color:low?C.red:C.text}}>
+                      {item.qty}
+                      <button onClick={()=>setAdjModal(item)} style={{marginLeft:5,background:C.surfaceAlt,border:`1px solid ${C.border}`,color:C.textMuted,borderRadius:3,padding:"0 5px",fontSize:10,cursor:"pointer",fontFamily:"inherit",lineHeight:"18px"}}>±</button>
+                    </td>
+                    <td style={{padding:"8px 12px",color:C.textMuted}}>{item.minQty||"—"}</td>
+                    <td style={{padding:"8px 12px",color:C.textMuted}}>{item.cost?`$${Number(item.cost).toFixed(2)}`:"—"}</td>
+                    <td style={{padding:"8px 12px",fontFamily:"monospace",fontSize:11}}>{item.cost&&item.qty?`$${(item.qty*item.cost).toFixed(2)}`:"—"}</td>
+                    <td style={{padding:"8px 12px"}}>{item.minQty>0?<Badge color={low?C.red:C.green} small>{low?"Low":"OK"}</Badge>:<span style={{color:C.textDim}}>—</span>}</td>
+                    <td style={{padding:"8px 12px"}}>
+                      <div style={{display:"flex",gap:4}}>
+                        <Btn variant="ghost" small onClick={()=>{setForm({...item,qty:String(item.qty),minQty:String(item.minQty),cost:String(item.cost||"")});setModal(item);}}>Edit</Btn>
+                        <Btn variant="danger" small onClick={()=>{setItems(p=>p.filter(i=>i.id!==item.id));notify("Removed.",C.red);}}>✕</Btn>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {paged.length===0&&<tr><td colSpan={10} style={{padding:40,textAlign:"center",color:C.textMuted}}>No items match.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      {totalPages>1&&(
+        <div style={{display:"flex",gap:8,alignItems:"center",justifyContent:"center",marginBottom:10}}>
+          <Btn variant="ghost" small onClick={()=>setPage(p=>Math.max(1,p-1))} disabled={page===1}>← Prev</Btn>
+          <span style={{color:C.textMuted,fontSize:12}}>Page {page} / {totalPages} &nbsp;·&nbsp; {visible.length} items</span>
+          <Btn variant="ghost" small onClick={()=>setPage(p=>Math.min(totalPages,p+1))} disabled={page===totalPages}>Next →</Btn>
+        </div>
+      )}
+
+      {adjModal&&(
+        <Modal title={`Adjust: ${adjModal.name}`} onClose={()=>setAdjModal(null)}>
+          <AdjustModal item={adjModal} onSave={(id,n)=>{setItems(p=>p.map(i=>i.id===id?{...i,qty:n}:i));notify("Quantity updated!");setAdjModal(null);}}/>
+        </Modal>
+      )}
+
+      {modal&&(
+        <Modal title={modal==="add"?"Add New Item":"Edit Item"} onClose={()=>setModal(null)}>
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              {fld("SKU","sku","text","e.g. 5ENL")}
+              {fld("Item Name *","name","text","e.g. 5\" Left End Cap")}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <div><label style={{fontSize:12,color:C.textMuted,display:"block",marginBottom:4}}>Category</label>
+                <Sel value={form.category||CATEGORIES[0]} onChange={e=>setForm(f=>({...f,category:e.target.value}))}>
+                  {CATEGORIES.map(c=><option key={c}>{c}</option>)}
+                </Sel>
+              </div>
+              <div><label style={{fontSize:12,color:C.textMuted,display:"block",marginBottom:4}}>Supplier</label>
+                <Sel value={form.supplier||""} onChange={e=>setForm(f=>({...f,supplier:e.target.value}))}>
+                  <option value="">None</option>
+                  {["Spectra","US Aluminum","OGG","Other"].map(s=><option key={s}>{s}</option>)}
+                </Sel>
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:10}}>
+              <div><label style={{fontSize:12,color:C.textMuted,display:"block",marginBottom:4}}>Unit</label>
+                <Sel value={form.unit||"each"} onChange={e=>setForm(f=>({...f,unit:e.target.value}))}>
+                  {UNITS.map(u=><option key={u}>{u}</option>)}
+                </Sel>
+              </div>
+              {fld("Qty","qty","number","0")}
+              {fld("Min Qty","minQty","number","0")}
+              {fld("Unit Cost","cost","number","0.00")}
+            </div>
+            <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:4}}>
+              <Btn variant="secondary" onClick={()=>setModal(null)}>Cancel</Btn>
+              <Btn onClick={saveItem}>{modal==="add"?"Add Item":"Save Changes"}</Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function AdjustModal({item,onSave}){
+  const [mode,setMode]=useState("set");
+  const [val,setVal]=useState("");
+  const result=()=>{const n=Number(val)||0;return mode==="set"?n:mode==="add"?item.qty+n:Math.max(0,item.qty-n);};
+  return(
+    <div>
+      <div style={{marginBottom:12,fontSize:13,color:C.textMuted}}>
+        Current: <strong style={{color:C.text}}>{item.qty} {item.unit}</strong>
+        {item.sku&&<span style={{marginLeft:8,fontFamily:"monospace",fontSize:11,color:C.textDim}}>{item.sku}</span>}
+      </div>
+      <div style={{display:"flex",gap:8,marginBottom:14}}>
+        {[["set","Set Exact"],["add","Add Stock"],["subtract","Remove"]].map(([m,l])=>(
+          <button key={m} onClick={()=>setMode(m)} style={{flex:1,padding:"8px 0",borderRadius:6,border:`1px solid ${mode===m?C.accent:C.border}`,background:mode===m?C.accent+"20":"transparent",color:mode===m?C.accent:C.textMuted,fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+            {l}
+          </button>
+        ))}
+      </div>
+      <Inp type="number" value={val} onChange={e=>setVal(e.target.value)} placeholder={mode==="set"?"New quantity":"Amount to adjust"}/>
+      {val!==""&&<div style={{marginTop:10,fontSize:13,color:C.textMuted}}>Result: <strong style={{color:C.accent,fontSize:16}}>{result()} {item.unit}</strong></div>}
+      <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:16}}>
+        <Btn onClick={()=>onSave(item.id,result())}>Update Quantity</Btn>
+      </div>
+    </div>
+  );
+}
+
+// ── Usage Log (owner inputs crew reports) ────────────────────────────────────
+function UsageLog({items,setItems,jobs,logs,setLogs,notify}){
+  const active=jobs.filter(j=>j.status==="active");
+  const [crewName,setCrewName]=useState("");
+  const [jobId,setJobId]=useState(active[0]?.id||"");
+  const [date,setDate]=useState(new Date().toISOString().slice(0,10));
+  const [notes,setNotes]=useState("");
+  const [rows,setRows]=useState([{itemId:"",qty:""}]);
+  const [search,setSearch]=useState("");
+
+  const filtered=search?items.filter(i=>i.name.toLowerCase().includes(search.toLowerCase())||i.sku.toLowerCase().includes(search.toLowerCase())):items;
+
+  const submit=()=>{
+    if(!crewName.trim()){notify("Enter crew member name.",C.red);return;}
+    if(!jobId){notify("Select a job first.",C.red);return;}
+    const valid=rows.filter(r=>r.itemId&&Number(r.qty)>0);
+    if(!valid.length){notify("Add at least one item with qty > 0.",C.red);return;}
+    const job=jobs.find(j=>j.id===jobId);
+    setItems(prev=>prev.map(item=>{
+      const row=valid.find(r=>r.itemId===item.id);
+      return row?{...item,qty:Math.max(0,item.qty-Number(row.qty))}:item;
+    }));
+    setLogs(prev=>[{
+      id:"log"+Date.now(),ts:Date.now(),date,crewName:crewName.trim(),
+      jobId,jobName:job?.name||"Unknown",notes:notes.trim(),
+      items:valid.map(r=>({
+        itemId:r.itemId,
+        itemName:items.find(i=>i.id===r.itemId)?.name||"Unknown",
+        sku:items.find(i=>i.id===r.itemId)?.sku||"",
+        qty:Number(r.qty),
+        unit:items.find(i=>i.id===r.itemId)?.unit||"each",
+      }))
+    },...prev]);
+    setCrewName("");setNotes("");setRows([{itemId:"",qty:""}]);setSearch("");
+    notify("✓ Usage logged — inventory updated!");
+  };
+
+  return(
+    <div style={{maxWidth:720}}>
+      <h2 style={{fontWeight:800,fontSize:22,marginBottom:6}}>Log Usage</h2>
+      <p style={{color:C.textMuted,fontSize:13,marginBottom:20}}>Enter what your crew used on a job. Inventory updates automatically.</p>
+      <Card>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14,marginBottom:16}}>
+          <div><label style={{fontSize:12,color:C.textMuted,display:"block",marginBottom:4}}>Crew Member *</label>
+            <Inp value={crewName} onChange={e=>setCrewName(e.target.value)} placeholder="Full name"/>
+          </div>
+          <div><label style={{fontSize:12,color:C.textMuted,display:"block",marginBottom:4}}>Job *</label>
+            <Sel value={jobId} onChange={e=>setJobId(e.target.value)}>
+              {active.length===0?<option value="">No active jobs — add one first</option>:active.map(j=><option key={j.id} value={j.id}>{j.name}</option>)}
+            </Sel>
+          </div>
+          <div><label style={{fontSize:12,color:C.textMuted,display:"block",marginBottom:4}}>Date</label>
+            <Inp type="date" value={date} onChange={e=>setDate(e.target.value)}/>
+          </div>
+        </div>
+
+        <div style={{marginBottom:14}}>
+          <label style={{fontSize:12,color:C.textMuted,display:"block",marginBottom:4}}>Filter items</label>
+          <Inp value={search} onChange={e=>setSearch(e.target.value)} placeholder="Type SKU or name to narrow list…"/>
+        </div>
+
+        <div style={{marginBottom:16}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <label style={{fontSize:11,color:C.textMuted,fontWeight:700,letterSpacing:.9,textTransform:"uppercase"}}>Materials Used *</label>
+            <Btn variant="ghost" small onClick={()=>setRows(p=>[...p,{itemId:"",qty:""}])}>+ Add Row</Btn>
+          </div>
+          {rows.map((row,i)=>(
+            <div key={i} style={{display:"flex",gap:10,marginBottom:8,alignItems:"center"}}>
+              <div style={{flex:3}}>
+                <Sel value={row.itemId} onChange={e=>setRows(p=>p.map((r,idx)=>idx===i?{...r,itemId:e.target.value}:r))}>
+                  <option value="">Select item…</option>
+                  {filtered.map(item=>(
+                    <option key={item.id} value={item.id}>[{item.sku||item.category}] {item.name} — {item.qty} {item.unit} on hand</option>
+                  ))}
+                </Sel>
+              </div>
+              <div style={{flex:1}}>
+                <Inp type="number" value={row.qty} onChange={e=>setRows(p=>p.map((r,idx)=>idx===i?{...r,qty:e.target.value}:r))} placeholder="Qty"/>
+              </div>
+              {rows.length>1&&<button onClick={()=>setRows(p=>p.filter((_,idx)=>idx!==i))} style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:18,lineHeight:1,padding:"0 4px"}}>✕</button>}
+            </div>
+          ))}
+        </div>
+
+        <div style={{marginBottom:18}}>
+          <label style={{fontSize:12,color:C.textMuted,display:"block",marginBottom:4}}>Notes (optional)</label>
+          <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Job notes, waste, special conditions…"
+            style={{width:"100%",boxSizing:"border-box",background:C.bg,border:`1px solid ${C.border}`,borderRadius:6,color:C.text,padding:"9px 12px",fontSize:13,fontFamily:"'DM Sans',system-ui,sans-serif",outline:"none",resize:"vertical",minHeight:72}}/>
+        </div>
+        <Btn onClick={submit}>Submit Usage Log</Btn>
+      </Card>
+    </div>
+  );
+}
+
+// ── Pending Review (crew submissions that come via the /crew page) ─────────────
+function PendingReview({pending,setPending,items,setItems,logs,setLogs,jobs,notify}){
+  const approve=(sub)=>{
+    const job=jobs.find(j=>j.id===sub.jobId);
+    setItems(prev=>prev.map(item=>{
+      const row=sub.items.find(r=>r.itemId===item.id);
+      return row?{...item,qty:Math.max(0,item.qty-Number(row.qty))}:item;
+    }));
+    setLogs(prev=>[{...sub,id:"log"+Date.now(),ts:Date.now(),jobName:job?.name||sub.jobName,reviewed:true},...prev]);
+    setPending(p=>p.filter(s=>s.id!==sub.id));
+    notify("✓ Submission approved — inventory updated!");
+  };
+  const reject=(id)=>{setPending(p=>p.filter(s=>s.id!==id));notify("Submission rejected.",C.red);};
+
+  return(
+    <div style={{maxWidth:780}}>
+      <h2 style={{fontWeight:800,fontSize:22,marginBottom:6}}>Pending Review</h2>
+      <p style={{color:C.textMuted,fontSize:13,marginBottom:20}}>Crew submissions waiting for your approval before inventory is deducted.</p>
+      {pending.length===0
+        ?<Card><div style={{textAlign:"center",color:C.textMuted,padding:40,fontSize:14}}>No pending submissions — you're all caught up!</div></Card>
+        :pending.map(sub=>(
+          <Card key={sub.id} style={{marginBottom:14}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12,gap:12,flexWrap:"wrap"}}>
+              <div>
+                <div style={{fontWeight:800,fontSize:16}}>{sub.crewName}</div>
+                <div style={{color:C.textMuted,fontSize:13,marginTop:2}}>{sub.jobName} · {sub.date}</div>
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <Btn variant="success" small onClick={()=>approve(sub)}>✓ Approve & Deduct</Btn>
+                <Btn variant="danger" small onClick={()=>reject(sub.id)}>✕ Reject</Btn>
+              </div>
+            </div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:sub.notes?10:0}}>
+              {sub.items.map((it,i)=>(
+                <span key={i} style={{background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:6,padding:"4px 10px",fontSize:12}}>
+                  <strong>{it.qty} {it.unit}</strong>
+                  <span style={{color:C.textMuted}}> · {it.itemName}</span>
+                  {it.sku&&<span style={{color:C.textDim,fontFamily:"monospace",fontSize:10}}> ({it.sku})</span>}
+                </span>
+              ))}
+            </div>
+            {sub.notes&&<div style={{fontSize:12,color:C.textMuted,fontStyle:"italic",marginTop:8}}>Note: "{sub.notes}"</div>}
+          </Card>
+        ))}
+    </div>
+  );
+}
+
+// ── History ───────────────────────────────────────────────────────────────────
+function History({logs,jobs}){
+  const [search,setSearch]=useState("");
+  const [jobFilter,setJobFilter]=useState("All");
+  const visible=[...logs].filter(l=>(jobFilter==="All"||l.jobId===jobFilter)&&(l.crewName.toLowerCase().includes(search.toLowerCase())||l.jobName.toLowerCase().includes(search.toLowerCase()))).sort((a,b)=>b.ts-a.ts);
+  return(
+    <div>
+      <h2 style={{fontWeight:800,fontSize:22,marginBottom:18}}>Usage History</h2>
+      <div style={{display:"flex",gap:12,marginBottom:18,flexWrap:"wrap"}}>
+        <Inp value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search crew or job…" style={{maxWidth:260}}/>
+        <Sel value={jobFilter} onChange={e=>setJobFilter(e.target.value)} style={{maxWidth:240}}>
+          <option value="All">All Jobs</option>
+          {jobs.map(j=><option key={j.id} value={j.id}>{j.name}</option>)}
+        </Sel>
+        <span style={{color:C.textMuted,fontSize:13,alignSelf:"center"}}>{visible.length} entries</span>
+      </div>
+      {visible.length===0
+        ?<Card><div style={{textAlign:"center",color:C.textMuted,padding:40}}>No usage logs yet.</div></Card>
+        :visible.map(log=>(
+          <Card key={log.id} style={{marginBottom:10}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10,gap:12}}>
+              <div>
+                <span style={{fontWeight:800,fontSize:15}}>{log.crewName}</span>
+                <span style={{color:C.textMuted,marginLeft:10,fontSize:13}}>{log.jobName}</span>
+                {log.reviewed&&<span style={{marginLeft:8}}><Badge color={C.blue} small>crew submit</Badge></span>}
+              </div>
+              <div style={{color:C.textDim,fontSize:11,whiteSpace:"nowrap"}}>{new Date(log.ts).toLocaleString()}</div>
+            </div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:log.notes?8:0}}>
+              {log.items.map((it,i)=>(
+                <span key={i} style={{background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:6,padding:"4px 10px",fontSize:12}}>
+                  <strong>{it.qty} {it.unit}</strong>
+                  <span style={{color:C.textMuted}}> · {it.itemName}</span>
+                  {it.sku&&<span style={{color:C.textDim,fontFamily:"monospace",fontSize:10}}> ({it.sku})</span>}
+                </span>
+              ))}
+            </div>
+            {log.notes&&<div style={{fontSize:12,color:C.textMuted,fontStyle:"italic"}}>"{log.notes}"</div>}
+          </Card>
+        ))}
+    </div>
+  );
+}
+
+// ── Jobs ──────────────────────────────────────────────────────────────────────
+function Jobs({jobs,setJobs,notify}){
+  const [modal,setModal]=useState(false);
+  const [name,setName]=useState("");
+  const add=()=>{if(!name.trim())return;setJobs(p=>[...p,{id:"j"+Date.now(),name:name.trim(),status:"active"}]);notify("Job added!");setModal(false);setName("");};
+  return(
+    <div style={{maxWidth:660}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
+        <h2 style={{fontWeight:800,fontSize:22,margin:0}}>Jobs & Projects</h2>
+        <Btn small onClick={()=>setModal(true)}>+ Add Job</Btn>
+      </div>
+      {jobs.length===0&&<Card><div style={{textAlign:"center",color:C.textMuted,padding:40}}>No jobs yet. Add one to start logging usage.</div></Card>}
+      {jobs.map(job=>(
+        <Card key={job.id} style={{marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}>
+          <div>
+            <div style={{fontWeight:700,fontSize:15,marginBottom:6}}>{job.name}</div>
+            <Badge color={job.status==="active"?C.green:C.textDim}>{job.status}</Badge>
+          </div>
+          <div style={{display:"flex",gap:8,flexShrink:0}}>
+            <Btn variant="ghost" small onClick={()=>setJobs(p=>p.map(j=>j.id===job.id?{...j,status:j.status==="active"?"completed":"active"}:j))}>
+              {job.status==="active"?"Mark Complete":"Reactivate"}
+            </Btn>
+            <Btn variant="danger" small onClick={()=>{setJobs(p=>p.filter(j=>j.id!==job.id));notify("Removed.",C.red);}}>✕</Btn>
+          </div>
+        </Card>
+      ))}
+      {modal&&(
+        <Modal title="Add Job" onClose={()=>setModal(false)}>
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            <div><label style={{fontSize:12,color:C.textMuted,display:"block",marginBottom:4}}>Job Name *</label>
+              <Inp value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. 123 Oak Ave — Naples"/>
+            </div>
+            <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+              <Btn variant="secondary" onClick={()=>setModal(false)}>Cancel</Btn>
+              <Btn onClick={add}>Add Job</Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
