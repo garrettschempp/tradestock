@@ -439,162 +439,505 @@ const Modal=({title,onClose,children,wide})=>(
   </div>
 );
 
-// ── App Shell ───────────────────────────────────────────────────────────────── function App(){ const [tab,setTab]=useState("dashboard"); const [items,setItems]=useState(()=>lsGet("gb:items")||SEED_ITEMS); const [jobs,setJobs]=useState(()=>lsGet("gb:jobs")||[]); const [logs,setLogs]=useState(()=>lsGet("gb:logs")||[]); const [pending,setPending]=useState(()=>lsGet("gb:pending")||[]); const [workOrders,setWorkOrders]=useState(()=>lsGet("gb:workorders")||[]); const [geminiKey,setGeminiKey]=useState(()=>localStorage.getItem("gb:geminiKey")||""); const [toast,setToast]=useState(null); useEffect(()=>lsSet("gb:items",items),[items]); useEffect(()=>lsSet("gb:jobs",jobs),[jobs]); useEffect(()=>lsSet("gb:logs",logs),[logs]); useEffect(()=>lsSet("gb:pending",pending),[pending]); useEffect(()=>lsSet("gb:workorders",workOrders),[workOrders]); useEffect(()=>{if(geminiKey)localStorage.setItem("gb:geminiKey",geminiKey);},[geminiKey]); const notify=(msg,color=C.green)=>{setToast({msg,color});setTimeout(()=>setToast(null),3500);}; const NAV=[ {id:"dashboard",icon:"◈",label:"Dashboard"}, {id:"inventory",icon:"▦",label:"Inventory"}, {id:"workorders",icon:"📄",label:"Work Orders"}, {id:"usage",icon:"◎",label:"Log Usage"}, {id:"pending",icon:"📋",label:`Pending${pending.length>0?` (${pending.length})`:""}`,alert:pending.length>0}, {id:"history",icon:"≡",label:"History"}, {id:"jobs",icon:"◉",label:"Jobs"}, {id:"settings",icon:"⚙",label:"Settings"}, ]; return(
-{toast&&(
-{toast.msg}
-)}
-🏗
-TradeStock
-GutterBrothers · Ft. Myers
-{NAV.map(t=>( setTab(t.id)} style={{background:"none",border:"none",cursor:"pointer",color:tab===t.id?C.accent:t.alert?C.red:C.textMuted,fontWeight:tab===t.id?800:500,fontSize:13,padding:"16px 10px",borderBottom:tab===t.id?`2px solid ${C.accent}`:t.alert?`2px solid ${C.red}`:"2px solid transparent",fontFamily:"'DM Sans',system-ui,sans-serif",transition:"color .15s",whiteSpace:"nowrap"}}> {t.label} ))}
-{items.length} SKUs
-{tab==="dashboard"&&} {tab==="inventory"&&} {tab==="workorders"&&} {tab==="usage"&&} {tab==="pending"&&} {tab==="history"&&} {tab==="jobs"&&} {tab==="settings"&&}
-); } // ── Dashboard ───────────────────────────────────────────────────────────────── function Dashboard({items,logs,jobs,pending}){ const low=items.filter(i=>i.minQty>0&&i.qty<=i.minQty); const totalVal=items.reduce((s,i)=>s+i.qty*(i.cost||0),0); const byCat={};items.forEach(i=>{const c=i.category;byCat[c]=(byCat[c]||0)+1;}); const bySup={};items.forEach(i=>{const s=i.supplier||"Other";bySup[s]=(bySup[s]||0)+1;}); const recent=[...logs].sort((a,b)=>b.ts-a.ts).slice(0,6); const Stat=({label,value,sub,color=C.accent})=>(
-{label}
-{value}
-{sub}
-); return(
-Dashboard
-{new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})}
-0?C.red:C.green}/> j.status==="active").length} sub="in progress" color={C.blue}/> {pending.length>0&&}
-SKUs by Supplier
-{Object.entries(bySup).sort((a,b)=>b[1]-a[1]).map(([s,n])=>(
-{s} {n}
-))}
-0?C.red:C.green}}> {low.length>0?`⚠ ${low.length} Low Stock Alert${low.length>1?"s":""}` :"✓ Stock Healthy"}
-{low.length===0 ?
-All items are above minimum levels.
-:low.slice(0,8).map(it=>(
-{it.name}
-{it.sku}
-{it.qty} {it.unit}
-min: {it.minQty}
-))}
-Recent Activity
-{recent.length===0 ?
-No usage logged yet.
-:recent.map(log=>(
-{log.crewName} {new Date(log.ts).toLocaleDateString()}
-{log.jobName} · {log.items.length} item{log.items.length!==1?"s":""}
-))}
-); } // ── Inventory ───────────────────────────────────────────────────────────────── function Inventory({items,setItems,notify}){ const [search,setSearch]=useState(""); const [cat,setCat]=useState("All"); const [sup,setSup]=useState("All"); const [modal,setModal]=useState(null); const [adjModal,setAdjModal]=useState(null); const [page,setPage]=useState(1); const PS=50; const emptyForm={sku:"",name:"",category:"K-Style Gutters",unit:"each",qty:"",minQty:"",cost:"",supplier:""}; const [form,setForm]=useState(emptyForm); const visible=items.filter(i=>{ if(cat!=="All"&&i.category!==cat)return false; if(sup!=="All"&&(i.supplier||"Other")!==sup)return false; const q=search.toLowerCase(); return !q||i.name.toLowerCase().includes(q)||i.sku.toLowerCase().includes(q); }); const totalPages=Math.ceil(visible.length/PS); const paged=visible.slice((page-1)*PS,page*PS); useEffect(()=>setPage(1),[search,cat,sup]); const saveItem=()=>{ if(!form.name.trim())return; const e={...form,qty:Number(form.qty)||0,minQty:Number(form.minQty)||0,cost:Number(form.cost)||0}; if(modal==="add"){setItems(p=>[{...e,id:"i"+Date.now()},...p]);notify("Item added!");} else{setItems(p=>p.map(i=>i.id===modal.id?{...i,...e}:i));notify("Updated!");} setModal(null); }; const exportExcel=()=>{ const ws=XLSX.utils.json_to_sheet(items.map(i=>({SKU:i.sku,Name:i.name,Category:i.category,Supplier:i.supplier||"",Unit:i.unit,Qty:i.qty,MinQty:i.minQty,Cost:i.cost||0,Value:(i.qty*(i.cost||0)).toFixed(2)}))); const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Inventory"); XLSX.writeFile(wb,`GutterBrothers-Inventory-${new Date().toISOString().slice(0,10)}.xlsx`); notify("Exported!"); }; const importExcel=async(e)=>{ const file=e.target.files[0];if(!file)return; const wb=XLSX.read(await file.arrayBuffer()); const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]); const newItems=rows.map((r,idx)=>({id:"xl"+Date.now()+idx,sku:String(r.SKU||r.sku||r.Code||""),name:r.Name||r.name||r.Item||`Item ${idx+1}`,category:r.Category||r.category||"Other",unit:r.Unit||r.unit||"each",qty:Number(r.Qty||r.qty||r.Quantity||0),minQty:Number(r.MinQty||r.minQty||r.Min||0),cost:Number(r.Cost||r.cost||r.Price||0),supplier:r.Supplier||r.supplier||""})); setItems(p=>[...p,...newItems]); notify(`Imported ${newItems.length} items!`); e.target.value=""; }; const fld=(label,key,type="text",ph="")=>(
-{label} setForm(f=>({...f,[key]:e.target.value}))} placeholder={ph}/>
-); return(
-Inventory {visible.length} items
-⬇ Export {}}>⬆ ImportNo file chosen {setForm(emptyForm);setModal("add");}}>+ Add Item
-setSearch(e.target.value)} placeholder="Search name or SKU…" style={{maxWidth:280}}/> setCat(e.target.value)} style={{maxWidth:200}}>All Categories{CATEGORIES.map(c=>{c})} setSup(e.target.value)} style={{maxWidth:160}}>{SUPPLIERS.map(s=>{s})}
-{["SKU","Name","Category","Supplier","Qty","Min","Cost $","Value","Status",""].map(h=>( ))} {paged.map((item,idx)=>{ const low=item.minQty>0&&item.qty<=item.minQty; return( ); })} {paged.length===0&&}
-{h}
-{item.sku||"—"}	{item.name}	{item.category}	{item.supplier?{item.supplier}:—}	{item.qty} setAdjModal(item)} style={{marginLeft:5,background:C.surfaceAlt,border:`1px solid ${C.border}`,color:C.textMuted,borderRadius:3,padding:"0 5px",fontSize:10,cursor:"pointer",fontFamily:"inherit",lineHeight:"18px"}}>±	{item.minQty||"—"}	{item.cost?`$${Number(item.cost).toFixed(2)}`:"—"}	{item.cost&&item.qty?`$${(item.qty*item.cost).toFixed(2)}`:"—"}	{item.minQty>0?{low?"Low":"OK"}:—}	
-{setForm({...item,qty:String(item.qty),minQty:String(item.minQty),cost:String(item.cost||"")});setModal(item);}}>Edit {setItems(p=>p.filter(i=>i.id!==item.id));notify("Removed.",C.red);}}>✕
-No items match.
-{totalPages>1&&(
-setPage(p=>Math.max(1,p-1))} disabled={page===1}>← Prev Page {page} / {totalPages} · {visible.length} items setPage(p=>Math.min(totalPages,p+1))} disabled={page===totalPages}>Next →
-)} {adjModal&&(setAdjModal(null)}>{setItems(p=>p.map(i=>i.id===id?{...i,qty:n}:i));notify("Quantity updated!");setAdjModal(null);}}/>)} {modal&&( setModal(null)}>
-{fld("SKU","sku","text","e.g. 5ENL")}{fld("Item Name *","name","text","e.g. 5\" Left End Cap")}
-CategorysetForm(f=>({...f,category:e.target.value}))}>{CATEGORIES.map(c=>{c})}
-SuppliersetForm(f=>({...f,supplier:e.target.value}))}>None{["Spectra","US Aluminum","OGG","Other"].map(s=>{s})}
-UnitsetForm(f=>({...f,unit:e.target.value}))}>{UNITS.map(u=>{u})}
-{fld("Qty","qty","number","0")}{fld("Min Qty","minQty","number","0")}{fld("Unit Cost","cost","number","0.00")}
-setModal(null)}>Cancel {modal==="add"?"Add Item":"Save Changes"}
-)}
-); } function AdjustModal({item,onSave}){ const [mode,setMode]=useState("set"); const [val,setVal]=useState(""); const result=()=>{const n=Number(val)||0;return mode==="set"?n:mode==="add"?item.qty+n:Math.max(0,item.qty-n);}; return(
-Current: {item.qty} {item.unit}{item.sku&&{item.sku}}
-{[["set","Set Exact"],["add","Add Stock"],["subtract","Remove"]].map(([m,l])=>( setMode(m)} style={{flex:1,padding:"8px 0",borderRadius:6,border:`1px solid ${mode===m?C.accent:C.border}`,background:mode===m?C.accent+"20":"transparent",color:mode===m?C.accent:C.textMuted,fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>{l} ))}
-setVal(e.target.value)} placeholder={mode==="set"?"New quantity":"Amount to adjust"}/> {val!==""&&
-Result: {result()} {item.unit}
+// ── App Shell ─────────────────────────────────────────────────────────────────
+function App(){
+  const [tab,setTab]=useState("dashboard");
+  const [items,setItems]=useState(()=>lsGet("gb:items")||SEED_ITEMS);
+  const [jobs,setJobs]=useState(()=>lsGet("gb:jobs")||[]);
+  const [logs,setLogs]=useState(()=>lsGet("gb:logs")||[]);
+  const [pending,setPending]=useState(()=>lsGet("gb:pending")||[]);
+  const [toast,setToast]=useState(null);
+
+  useEffect(()=>lsSet("gb:items",items),[items]);
+  useEffect(()=>lsSet("gb:jobs",jobs),[jobs]);
+  useEffect(()=>lsSet("gb:logs",logs),[logs]);
+  useEffect(()=>lsSet("gb:pending",pending),[pending]);
+
+  const notify=(msg,color=C.green)=>{setToast({msg,color});setTimeout(()=>setToast(null),3500);};
+
+  const NAV=[
+    {id:"dashboard",icon:"◈",label:"Dashboard"},
+    {id:"inventory",icon:"▦",label:"Inventory"},
+    {id:"usage",icon:"◎",label:"Log Usage"},
+    {id:"pending",icon:"📋",label:`Pending${pending.length>0?` (${pending.length})`:""}`,alert:pending.length>0},
+    {id:"history",icon:"≡",label:"History"},
+    {id:"jobs",icon:"◉",label:"Jobs"},
+  ];
+
+  return(
+    <div style={{background:C.bg,minHeight:"100vh"}}>
+      {toast&&(
+        <div style={{position:"fixed",top:16,right:16,zIndex:9999,background:toast.color+"22",border:`1px solid ${toast.color}55`,color:toast.color,borderRadius:8,padding:"12px 20px",fontWeight:700,fontSize:13,boxShadow:"0 4px 20px #0008",maxWidth:320}}>
+          {toast.msg}
+        </div>
+      )}
+
+      {/* Nav */}
+      <div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,padding:"0 20px",display:"flex",alignItems:"center",gap:4,position:"sticky",top:0,zIndex:100,flexWrap:"wrap"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,padding:"12px 0",marginRight:12}}>
+          <div style={{width:32,height:32,background:C.accent,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17}}>🏗</div>
+          <div>
+            <div style={{fontWeight:800,fontSize:15,letterSpacing:"-.3px"}}>TradeStock</div>
+            <div style={{fontSize:9,color:C.textDim,letterSpacing:.8,textTransform:"uppercase"}}>GutterBrothers · Ft. Myers</div>
+          </div>
+        </div>
+        {NAV.map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{background:"none",border:"none",cursor:"pointer",color:tab===t.id?C.accent:t.alert?C.red:C.textMuted,fontWeight:tab===t.id?800:500,fontSize:13,padding:"16px 10px",borderBottom:tab===t.id?`2px solid ${C.accent}`:t.alert?`2px solid ${C.red}`:"2px solid transparent",fontFamily:"'DM Sans',system-ui,sans-serif",transition:"color .15s",whiteSpace:"nowrap"}}>
+            {t.label}
+          </button>
+        ))}
+        <div style={{marginLeft:"auto",fontSize:11,color:C.textDim,fontFamily:"'DM Mono',monospace",padding:"0 4px"}}>
+          {items.length} SKUs
+        </div>
+      </div>
+
+      <div style={{padding:"20px",maxWidth:1400,margin:"0 auto"}}>
+        {tab==="dashboard"&&<Dashboard items={items} logs={logs} jobs={jobs} pending={pending}/>}
+        {tab==="inventory"&&<Inventory items={items} setItems={setItems} notify={notify}/>}
+        {tab==="usage"&&<UsageLog items={items} setItems={setItems} jobs={jobs} logs={logs} setLogs={setLogs} notify={notify}/>}
+        {tab==="pending"&&<PendingReview pending={pending} setPending={setPending} items={items} setItems={setItems} logs={logs} setLogs={setLogs} jobs={jobs} notify={notify}/>}
+        {tab==="history"&&<History logs={logs} jobs={jobs}/>}
+        {tab==="jobs"&&<Jobs jobs={jobs} setJobs={setJobs} notify={notify}/>}
+      </div>
+    </div>
+  );
 }
-onSave(item.id,result())}>Update Quantity
-); } // ── Work Orders ─────────────────────────────────────────────────────────────── function WorkOrders({items,jobs,workOrders,setWorkOrders,geminiKey,notify,setTab}){ const [loading,setLoading]=useState(false); const [activeWO,setActiveWO]=useState(null); const [poModal,setPoModal]=useState(null); const fileRef=useRef(); const readFileAsBase64=(file)=>new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result.split(",")[1]); r.onerror=rej; r.readAsDataURL(file); }); const uploadPDF=async(e)=>{ const file=e.target.files[0]; if(!file)return; if(!geminiKey){notify("Add your Gemini API key in Settings first.",C.red);setTab("settings");return;} setLoading(true); notify("Sending to Gemini AI — reading your work order…",C.blue); try{ const b64=await readFileAsBase64(file); const prompt=`You are reading a ServiceBridge work order PDF for a gutter installation company. Extract EVERY line item that has a SKU code and quantity. SKU codes look like: 6ENL, USA-5SS-C, OGG-5-FM, 4AEL, 3X4-DS-WHI, etc. Return ONLY valid JSON — no markdown, no explanation, just raw JSON. Format: { "jobName": "customer name or address from the work order", "workOrderNumber": "WO number if visible", "date": "date if visible", "lineItems": [ {"sku": "SKU_CODE", "description": "item description", "qty": 10, "unit": "each"} ] } If you cannot find a field, use null. Quantities must be numbers.`; const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`,{ method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ contents:[{parts:[ {text:prompt}, {inline_data:{mime_type:"application/pdf",data:b64}} ]}], generationConfig:{temperature:0.1,maxOutputTokens:2048} }) }); const data=await res.json(); if(data.error){notify("Gemini error: "+data.error.message,C.red);setLoading(false);return;} let raw=data.candidates?.[0]?.content?.parts?.[0]?.text||"{}"; raw=raw.replace(/```json|```/g,"").trim(); const parsed=JSON.parse(raw); // Match SKUs to inventory const matched=( parsed.lineItems||[]).map(li=>{ const inv=items.find(i=>i.sku&&i.sku.toLowerCase()===li.sku.toLowerCase()); const need=Number(li.qty)||0; const have=inv?inv.qty:0; const short=Math.max(0,need-have); return{...li,inventoryItem:inv||null,have,need,short,matched:!!inv}; }); const wo={ id:"wo"+Date.now(), fileName:file.name, jobName:parsed.jobName||file.name, workOrderNumber:parsed.workOrderNumber||null, date:parsed.date||new Date().toISOString().slice(0,10), uploadedAt:Date.now(), lineItems:matched, totalItems:matched.length, shortages:matched.filter(i=>i.short>0).length, unmatched:matched.filter(i=>!i.matched).length, }; setWorkOrders(p=>[wo,...p]); setActiveWO(wo); notify(`✓ Work order read — ${matched.length} items found, ${matched.filter(i=>i.short>0).length} shortages`); }catch(err){ notify("Error reading PDF: "+err.message,C.red); } setLoading(false); e.target.value=""; }; const generatePO=(wo)=>{ // Group shortages by supplier const bySupplier={}; wo.lineItems.filter(li=>li.short>0&&li.inventoryItem).forEach(li=>{ const sup=li.inventoryItem.supplier||"Other"; if(!bySupplier[sup])bySupplier[sup]=[]; bySupplier[sup].push(li); }); // Also add unmatched items under "Unknown" const unmatched=wo.lineItems.filter(li=>li.short>0&&!li.inventoryItem); if(unmatched.length)bySupplier["Unknown / Check Manually"]=unmatched; setPoModal({wo,bySupplier}); }; const printPO=(wo,bySupplier)=>{ const lines=Object.entries(bySupplier).map(([sup,items])=>{ const rows=items.map(li=>` ${li.sku||"?"} — ${li.description} — Qty needed: ${li.short} ${li.unit||""} ${li.inventoryItem?`@ $${Number(li.inventoryItem.cost).toFixed(2)} ea = $${(li.short*li.inventoryItem.cost).toFixed(2)}`:"(no price)"}`).join("\n"); const total=items.reduce((s,li)=>s+(li.inventoryItem?li.short*li.inventoryItem.cost:0),0); return `\n── ${sup.toUpperCase()} ──\n${rows}\n Subtotal: $${total.toFixed(2)}`; }).join("\n"); const grandTotal=Object.values(bySupplier).flat().reduce((s,li)=>s+(li.inventoryItem?li.short*li.inventoryItem.cost:0),0); const text=`PURCHASE ORDER — GUTTERBROTHERS\nDate: ${new Date().toLocaleDateString()}\nWork Order: ${wo.jobName} ${wo.workOrderNumber?"#"+wo.workOrderNumber:""}\n${"─".repeat(50)}${lines}\n${"─".repeat(50)}\nGRAND TOTAL: $${grandTotal.toFixed(2)}\n`; const win=window.open("","_blank"); win.document.write(`
-${text}
-`); win.document.close();win.print(); }; const statusColor=(wo)=>wo.shortages===0?C.green:wo.shortages>3?C.red:C.accent; return(
-Work Orders
-{!geminiKey&&setTab("settings")}>⚙ Add API Key First} {}} disabled={loading}>{loading?"⏳ Reading PDF…":"⬆ Upload Work Order PDF"} No file chosen
-Upload a ServiceBridge work order PDF. Gemini AI reads the SKUs and quantities, then compares against your inventory to show shortages and generate purchase orders.
 
-{!geminiKey&&(
-🔑
-Gemini API Key Required
-Go to Settings and paste your key to enable PDF reading.
-setTab("settings")} style={{marginLeft:"auto",flexShrink:0}}>Go to Settings
-)} {/* Work order list */} {workOrders.length===0?(
-📄
-No work orders yet
-Upload a ServiceBridge PDF to get started
-):(
-{workOrders.map(wo=>(
-setActiveWO(activeWO?.id===wo.id?null:wo)} style={{flex:1,cursor:"pointer"}}>
-{wo.jobName} {wo.workOrderNumber&&#{wo.workOrderNumber}}
-{new Date(wo.uploadedAt).toLocaleDateString()} {wo.totalItems} items {wo.shortages===0?"✓ In Stock":`${wo.shortages} shortage${wo.shortages>1?"s":""}`} {wo.unmatched>0&&{wo.unmatched} unmatched SKU{wo.unmatched>1?"s":""}}
-{wo.shortages>0&&generatePO(wo)}>📋 Generate PO} setActiveWO(activeWO?.id===wo.id?null:wo)}>{activeWO?.id===wo.id?"Hide":"View"} setWorkOrders(p=>p.filter(w=>w.id!==wo.id))}>✕
-{activeWO?.id===wo.id&&(
-{["SKU","Description","Need","Have","Short","Unit Cost","Order Cost","Status"].map(h=>( ))} {wo.lineItems.map((li,i)=>{ const status=!li.matched?"⚠ Unknown SKU":li.short===0?"✓ In Stock":`Short ${li.short}`; const statusCol=!li.matched?C.textMuted:li.short===0?C.green:C.red; const orderCost=li.inventoryItem&&li.short>0?(li.short*li.inventoryItem.cost).toFixed(2):null; return( 0?C.red+"08":li.matched?"transparent":C.textDim+"08"}}> ); })}
-{h}
-{li.sku||"—"}	{li.description||li.inventoryItem?.name||"—"}	{li.need}	{li.matched?li.have:"—"}	0?C.red:C.green}}>{li.short>0?li.short:"—"}	{li.inventoryItem?.cost?`$${Number(li.inventoryItem.cost).toFixed(2)}`:"—"}	{orderCost?`$${orderCost}`:"—"}	{status}
-{wo.shortages>0&&(
-generatePO(wo)}>📋 Generate Purchase Orders
-)}
-)} ))}
-)} {/* PO Modal */} {poModal&&( setPoModal(null)} wide>
-Shortages grouped by supplier. Review then print or copy to send.
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+function Dashboard({items,logs,jobs,pending}){
+  const low=items.filter(i=>i.minQty>0&&i.qty<=i.minQty);
+  const totalVal=items.reduce((s,i)=>s+i.qty*(i.cost||0),0);
+  const byCat={};items.forEach(i=>{const c=i.category;byCat[c]=(byCat[c]||0)+1;});
+  const bySup={};items.forEach(i=>{const s=i.supplier||"Other";bySup[s]=(bySup[s]||0)+1;});
+  const recent=[...logs].sort((a,b)=>b.ts-a.ts).slice(0,6);
 
-{Object.entries(poModal.bySupplier).map(([sup,items])=>{ const total=items.reduce((s,li)=>s+(li.inventoryItem?li.short*li.inventoryItem.cost:0),0); const supColor=SUP_COLOR[sup]||C.textMuted; return(
-{sup} Est. ${total.toFixed(2)}
-{["SKU","Item","Qty to Order","Unit Cost","Line Total"].map(h=>( ))} {items.map((li,i)=>( ))}
-{h}
-{li.sku||"?"}	{li.description||li.inventoryItem?.name||"Unknown"}	{li.short} {li.unit||""}	{li.inventoryItem?.cost?`$${Number(li.inventoryItem.cost).toFixed(2)}`:"—"}	{li.inventoryItem?`$${(li.short*li.inventoryItem.cost).toFixed(2)}`:"—"}
-); })}
-Grand Total: ${Object.values(poModal.bySupplier).flat().reduce((s,li)=>s+(li.inventoryItem?li.short*li.inventoryItem.cost:0),0).toFixed(2)}
-setPoModal(null)}>Close printPO(poModal.wo,poModal.bySupplier)}>🖨 Print PO
-)}
-); } // ── Usage Log ───────────────────────────────────────────────────────────────── function UsageLog({items,setItems,jobs,logs,setLogs,notify}){ const active=jobs.filter(j=>j.status==="active"); const [crewName,setCrewName]=useState(""); const [jobId,setJobId]=useState(active[0]?.id||""); const [date,setDate]=useState(new Date().toISOString().slice(0,10)); const [notes,setNotes]=useState(""); const [rows,setRows]=useState([{itemId:"",qty:""}]); const [search,setSearch]=useState(""); const filtered=search?items.filter(i=>i.name.toLowerCase().includes(search.toLowerCase())||i.sku.toLowerCase().includes(search.toLowerCase())):items; const submit=()=>{ if(!crewName.trim()){notify("Enter crew member name.",C.red);return;} if(!jobId){notify("Select a job first.",C.red);return;} const valid=rows.filter(r=>r.itemId&&Number(r.qty)>0); if(!valid.length){notify("Add at least one item with qty > 0.",C.red);return;} const job=jobs.find(j=>j.id===jobId); setItems(prev=>prev.map(item=>{const row=valid.find(r=>r.itemId===item.id);return row?{...item,qty:Math.max(0,item.qty-Number(row.qty))}:item;})); setLogs(prev=>[{id:"log"+Date.now(),ts:Date.now(),date,crewName:crewName.trim(),jobId,jobName:job?.name||"Unknown",notes:notes.trim(),items:valid.map(r=>({itemId:r.itemId,itemName:items.find(i=>i.id===r.itemId)?.name||"Unknown",sku:items.find(i=>i.id===r.itemId)?.sku||"",qty:Number(r.qty),unit:items.find(i=>i.id===r.itemId)?.unit||"each"}))},...prev]); setCrewName("");setNotes("");setRows([{itemId:"",qty:""}]);setSearch(""); notify("✓ Usage logged — inventory updated!"); }; return(
-Log Usage
-Enter what your crew used on a job. Inventory updates automatically.
+  const Stat=({label,value,sub,color=C.accent})=>(
+    <Card style={{flex:"1 1 140px"}}>
+      <div style={{color:C.textMuted,fontSize:10,fontWeight:700,letterSpacing:1.2,textTransform:"uppercase",marginBottom:8}}>{label}</div>
+      <div style={{fontSize:28,fontWeight:800,color,letterSpacing:"-.5px",lineHeight:1}}>{value}</div>
+      <div style={{fontSize:12,color:C.textDim,marginTop:5}}>{sub}</div>
+    </Card>
+  );
 
-Crew Member *setCrewName(e.target.value)} placeholder="Full name"/>
-Job *setJobId(e.target.value)}>{active.length===0?No active jobs:active.map(j=>{j.name})}
-DatesetDate(e.target.value)}/>
-Filter itemssetSearch(e.target.value)} placeholder="Type SKU or name to narrow list…"/>
-Materials Used * setRows(p=>[...p,{itemId:"",qty:""}])}>+ Add Row
-{rows.map((row,i)=>(
-setRows(p=>p.map((r,idx)=>idx===i?{...r,itemId:e.target.value}:r))}>Select item…{filtered.map(item=>([{item.sku||item.category}] {item.name} — {item.qty} {item.unit} on hand))}
-setRows(p=>p.map((r,idx)=>idx===i?{...r,qty:e.target.value}:r))} placeholder="Qty"/>
-{rows.length>1&&setRows(p=>p.filter((_,idx)=>idx!==i))} style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:18,lineHeight:1,padding:"0 4px"}}>✕}
-))}
-Notes (optional)
-setNotes(e.target.value)} placeholder="Job notes, waste, special conditions…" style={{width:"100%",boxSizing:"border-box",background:C.bg,border:`1px solid ${C.border}`,borderRadius:6,color:C.text,padding:"9px 12px",fontSize:13,fontFamily:"'DM Sans',system-ui,sans-serif",outline:"none",resize:"vertical",minHeight:72}}/></div>
+  return(
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:20}}>
+        <h2 style={{fontWeight:800,fontSize:22,letterSpacing:"-.4px"}}>Dashboard</h2>
+        <span style={{color:C.textDim,fontSize:12}}>{new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})}</span>
+      </div>
+
+      <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:24}}>
+        <Stat label="Total SKUs" value={items.length} sub="items in system"/>
+        <Stat label="Est. Value" value={`$${totalVal.toLocaleString("en",{maximumFractionDigits:0})}`} sub="cost basis on hand" color={C.teal}/>
+        <Stat label="Low Stock" value={low.length} sub="need reorder" color={low.length>0?C.red:C.green}/>
+        <Stat label="Active Jobs" value={jobs.filter(j=>j.status==="active").length} sub="in progress" color={C.blue}/>
+        <Stat label="Usage Logs" value={logs.length} sub="total entries"/>
+        {pending.length>0&&<Stat label="Pending Review" value={pending.length} sub="crew submissions" color={C.red}/>}
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(300px,1fr))",gap:20,marginBottom:20}}>
+        <Card>
+          <div style={{fontWeight:800,marginBottom:14,fontSize:14}}>SKUs by Supplier</div>
+          {Object.entries(bySup).sort((a,b)=>b[1]-a[1]).map(([s,n])=>(
+            <div key={s} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:`1px solid ${C.border}`}}>
+              <Badge color={SUP_COLOR[s]||C.textMuted}>{s}</Badge>
+              <span style={{fontFamily:"'DM Mono',monospace",fontWeight:700,fontSize:13}}>{n}</span>
+            </div>
+          ))}
+        </Card>
+
+        <Card>
+          <div style={{fontWeight:800,marginBottom:14,fontSize:14,color:low.length>0?C.red:C.green}}>
+            {low.length>0?`⚠ ${low.length} Low Stock Alert${low.length>1?"s":""}` :"✓ Stock Healthy"}
+          </div>
+          {low.length===0
+            ?<div style={{color:C.textMuted,fontSize:13}}>All items are above minimum levels.</div>
+            :low.slice(0,8).map(it=>(
+              <div key={it.id} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:`1px solid ${C.border}`}}>
+                <div>
+                  <div style={{fontWeight:700,fontSize:12}}>{it.name}</div>
+                  <div style={{fontSize:10,color:C.textMuted,fontFamily:"monospace"}}>{it.sku}</div>
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <div style={{color:C.red,fontWeight:800,fontSize:13}}>{it.qty} {it.unit}</div>
+                  <div style={{fontSize:10,color:C.textDim}}>min: {it.minQty}</div>
+                </div>
+              </div>
+            ))}
+        </Card>
+
+        <Card>
+          <div style={{fontWeight:800,marginBottom:14,fontSize:14}}>Recent Activity</div>
+          {recent.length===0
+            ?<div style={{color:C.textMuted,fontSize:13}}>No usage logged yet.</div>
+            :recent.map(log=>(
+              <div key={log.id} style={{padding:"7px 0",borderBottom:`1px solid ${C.border}`}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:2}}>
+                  <span style={{fontWeight:700,fontSize:13}}>{log.crewName}</span>
+                  <span style={{color:C.textDim,fontSize:11}}>{new Date(log.ts).toLocaleDateString()}</span>
+                </div>
+                <div style={{color:C.textMuted,fontSize:12}}>{log.jobName} · {log.items.length} item{log.items.length!==1?"s":""}</div>
+              </div>
+            ))}
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// ── Inventory ─────────────────────────────────────────────────────────────────
+function Inventory({items,setItems,notify}){
+  const [search,setSearch]=useState("");
+  const [cat,setCat]=useState("All");
+  const [sup,setSup]=useState("All");
+  const [modal,setModal]=useState(null);
+  const [adjModal,setAdjModal]=useState(null);
+  const [page,setPage]=useState(1);
+  const PS=50;
+
+  const emptyForm={sku:"",name:"",category:"K-Style Gutters",unit:"each",qty:"",minQty:"",cost:"",supplier:""};
+  const [form,setForm]=useState(emptyForm);
+
+  const visible=items.filter(i=>{
+    if(cat!=="All"&&i.category!==cat)return false;
+    if(sup!=="All"&&(i.supplier||"Other")!==sup)return false;
+    const q=search.toLowerCase();
+    return !q||i.name.toLowerCase().includes(q)||i.sku.toLowerCase().includes(q);
+  });
+  const totalPages=Math.ceil(visible.length/PS);
+  const paged=visible.slice((page-1)*PS,page*PS);
+  useEffect(()=>setPage(1),[search,cat,sup]);
+
+  const saveItem=()=>{
+    if(!form.name.trim())return;
+    const e={...form,qty:Number(form.qty)||0,minQty:Number(form.minQty)||0,cost:Number(form.cost)||0};
+    if(modal==="add"){setItems(p=>[{...e,id:"i"+Date.now()},...p]);notify("Item added!");}
+    else{setItems(p=>p.map(i=>i.id===modal.id?{...i,...e}:i));notify("Updated!");}
+    setModal(null);
+  };
+
+  const exportExcel=()=>{
+    const ws=XLSX.utils.json_to_sheet(items.map(i=>({SKU:i.sku,Name:i.name,Category:i.category,Supplier:i.supplier||"",Unit:i.unit,Qty:i.qty,MinQty:i.minQty,Cost:i.cost||0,Value:(i.qty*(i.cost||0)).toFixed(2)})));
+    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Inventory");
+    XLSX.writeFile(wb,`GutterBrothers-Inventory-${new Date().toISOString().slice(0,10)}.xlsx`);
+    notify("Exported!");
+  };
+
+  const importExcel=async(e)=>{
+    const file=e.target.files[0];if(!file)return;
+    const wb=XLSX.read(await file.arrayBuffer());
+    const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+    const newItems=rows.map((r,idx)=>({
+      id:"xl"+Date.now()+idx,
+      sku:String(r.SKU||r.sku||r.Code||""),
+      name:r.Name||r.name||r.Item||`Item ${idx+1}`,
+      category:r.Category||r.category||"Other",
+      unit:r.Unit||r.unit||"each",
+      qty:Number(r.Qty||r.qty||r.Quantity||0),
+      minQty:Number(r.MinQty||r.minQty||r.Min||0),
+      cost:Number(r.Cost||r.cost||r.Price||0),
+      supplier:r.Supplier||r.supplier||"",
+    }));
+    setItems(p=>[...p,...newItems]);
+    notify(`Imported ${newItems.length} items!`);
+    e.target.value="";
+  };
+
+  const fld=(label,key,type="text",ph="")=>(
+    <div>
+      <label style={{fontSize:12,color:C.textMuted,display:"block",marginBottom:4}}>{label}</label>
+      <Inp type={type} value={form[key]||""} onChange={e=>setForm(f=>({...f,[key]:e.target.value}))} placeholder={ph}/>
+    </div>
+  );
+
+  return(
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,gap:12,flexWrap:"wrap"}}>
+        <h2 style={{fontWeight:800,fontSize:22,margin:0}}>
+          Inventory
+          <span style={{fontSize:14,color:C.textMuted,fontWeight:400,marginLeft:10}}>{visible.length} items</span>
+        </h2>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          <Btn variant="ghost" small onClick={exportExcel}>⬇ Export</Btn>
+          <label style={{cursor:"pointer"}}>
+            <Btn variant="ghost" small onClick={()=>{}}>⬆ Import</Btn>
+            <input type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={importExcel}/>
+          </label>
+          <Btn small onClick={()=>{setForm(emptyForm);setModal("add");}}>+ Add Item</Btn>
+        </div>
+      </div>
+
+      <div style={{display:"flex",gap:10,marginBottom:14,flexWrap:"wrap"}}>
+        <Inp value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search name or SKU…" style={{maxWidth:280}}/>
+        <Sel value={cat} onChange={e=>setCat(e.target.value)} style={{maxWidth:200}}>
+          <option value="All">All Categories</option>
+          {CATEGORIES.map(c=><option key={c}>{c}</option>)}
+        </Sel>
+        <Sel value={sup} onChange={e=>setSup(e.target.value)} style={{maxWidth:160}}>
+          {SUPPLIERS.map(s=><option key={s}>{s}</option>)}
+        </Sel>
+      </div>
+
+      <Card style={{padding:0,overflow:"hidden",marginBottom:10}}>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <thead>
+              <tr style={{borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
+                {["SKU","Name","Category","Supplier","Qty","Min","Cost $","Value","Status",""].map(h=>(
+                  <th key={h} style={{padding:"9px 12px",textAlign:"left",color:C.textMuted,fontWeight:700,fontSize:10,letterSpacing:.9,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {paged.map((item,idx)=>{
+                const low=item.minQty>0&&item.qty<=item.minQty;
+                return(
+                  <tr key={item.id} style={{borderBottom:`1px solid ${C.border}22`,background:idx%2===0?"transparent":C.bg+"50"}}>
+                    <td style={{padding:"8px 12px",fontFamily:"monospace",fontSize:10,color:C.textMuted}}>{item.sku||"—"}</td>
+                    <td style={{padding:"8px 12px",fontWeight:600,maxWidth:240,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.name}</td>
+                    <td style={{padding:"8px 12px"}}><Badge color={CAT_COLOR[item.category]||C.textMuted} small>{item.category}</Badge></td>
+                    <td style={{padding:"8px 12px"}}>{item.supplier?<Badge color={SUP_COLOR[item.supplier]||C.textMuted} small>{item.supplier}</Badge>:<span style={{color:C.textDim}}>—</span>}</td>
+                    <td style={{padding:"8px 12px",fontWeight:800,color:low?C.red:C.text}}>
+                      {item.qty}
+                      <button onClick={()=>setAdjModal(item)} style={{marginLeft:5,background:C.surfaceAlt,border:`1px solid ${C.border}`,color:C.textMuted,borderRadius:3,padding:"0 5px",fontSize:10,cursor:"pointer",fontFamily:"inherit",lineHeight:"18px"}}>±</button>
+                    </td>
+                    <td style={{padding:"8px 12px",color:C.textMuted}}>{item.minQty||"—"}</td>
+                    <td style={{padding:"8px 12px",color:C.textMuted}}>{item.cost?`$${Number(item.cost).toFixed(2)}`:"—"}</td>
+                    <td style={{padding:"8px 12px",fontFamily:"monospace",fontSize:11}}>{item.cost&&item.qty?`$${(item.qty*item.cost).toFixed(2)}`:"—"}</td>
+                    <td style={{padding:"8px 12px"}}>{item.minQty>0?<Badge color={low?C.red:C.green} small>{low?"Low":"OK"}</Badge>:<span style={{color:C.textDim}}>—</span>}</td>
+                    <td style={{padding:"8px 12px"}}>
+                      <div style={{display:"flex",gap:4}}>
+                        <Btn variant="ghost" small onClick={()=>{setForm({...item,qty:String(item.qty),minQty:String(item.minQty),cost:String(item.cost||"")});setModal(item);}}>Edit</Btn>
+                        <Btn variant="danger" small onClick={()=>{setItems(p=>p.filter(i=>i.id!==item.id));notify("Removed.",C.red);}}>✕</Btn>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {paged.length===0&&<tr><td colSpan={10} style={{padding:40,textAlign:"center",color:C.textMuted}}>No items match.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      {totalPages>1&&(
+        <div style={{display:"flex",gap:8,alignItems:"center",justifyContent:"center",marginBottom:10}}>
+          <Btn variant="ghost" small onClick={()=>setPage(p=>Math.max(1,p-1))} disabled={page===1}>← Prev</Btn>
+          <span style={{color:C.textMuted,fontSize:12}}>Page {page} / {totalPages} &nbsp;·&nbsp; {visible.length} items</span>
+          <Btn variant="ghost" small onClick={()=>setPage(p=>Math.min(totalPages,p+1))} disabled={page===totalPages}>Next →</Btn>
+        </div>
+      )}
+
+      {adjModal&&(
+        <Modal title={`Adjust: ${adjModal.name}`} onClose={()=>setAdjModal(null)}>
+          <AdjustModal item={adjModal} onSave={(id,n)=>{setItems(p=>p.map(i=>i.id===id?{...i,qty:n}:i));notify("Quantity updated!");setAdjModal(null);}}/>
+        </Modal>
+      )}
+
+      {modal&&(
+        <Modal title={modal==="add"?"Add New Item":"Edit Item"} onClose={()=>setModal(null)}>
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              {fld("SKU","sku","text","e.g. 5ENL")}
+              {fld("Item Name *","name","text","e.g. 5\" Left End Cap")}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <div><label style={{fontSize:12,color:C.textMuted,display:"block",marginBottom:4}}>Category</label>
+                <Sel value={form.category||CATEGORIES[0]} onChange={e=>setForm(f=>({...f,category:e.target.value}))}>
+                  {CATEGORIES.map(c=><option key={c}>{c}</option>)}
+                </Sel>
+              </div>
+              <div><label style={{fontSize:12,color:C.textMuted,display:"block",marginBottom:4}}>Supplier</label>
+                <Sel value={form.supplier||""} onChange={e=>setForm(f=>({...f,supplier:e.target.value}))}>
+                  <option value="">None</option>
+                  {["Spectra","US Aluminum","OGG","Other"].map(s=><option key={s}>{s}</option>)}
+                </Sel>
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:10}}>
+              <div><label style={{fontSize:12,color:C.textMuted,display:"block",marginBottom:4}}>Unit</label>
+                <Sel value={form.unit||"each"} onChange={e=>setForm(f=>({...f,unit:e.target.value}))}>
+                  {UNITS.map(u=><option key={u}>{u}</option>)}
+                </Sel>
+              </div>
+              {fld("Qty","qty","number","0")}
+              {fld("Min Qty","minQty","number","0")}
+              {fld("Unit Cost","cost","number","0.00")}
+            </div>
+            <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:4}}>
+              <Btn variant="secondary" onClick={()=>setModal(null)}>Cancel</Btn>
+              <Btn onClick={saveItem}>{modal==="add"?"Add Item":"Save Changes"}</Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function AdjustModal({item,onSave}){
+  const [mode,setMode]=useState("set");
+  const [val,setVal]=useState("");
+  const result=()=>{const n=Number(val)||0;return mode==="set"?n:mode==="add"?item.qty+n:Math.max(0,item.qty-n);};
+  return(
+    <div>
+      <div style={{marginBottom:12,fontSize:13,color:C.textMuted}}>
+        Current: <strong style={{color:C.text}}>{item.qty} {item.unit}</strong>
+        {item.sku&&<span style={{marginLeft:8,fontFamily:"monospace",fontSize:11,color:C.textDim}}>{item.sku}</span>}
+      </div>
+      <div style={{display:"flex",gap:8,marginBottom:14}}>
+        {[["set","Set Exact"],["add","Add Stock"],["subtract","Remove"]].map(([m,l])=>(
+          <button key={m} onClick={()=>setMode(m)} style={{flex:1,padding:"8px 0",borderRadius:6,border:`1px solid ${mode===m?C.accent:C.border}`,background:mode===m?C.accent+"20":"transparent",color:mode===m?C.accent:C.textMuted,fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+            {l}
+          </button>
+        ))}
+      </div>
+      <Inp type="number" value={val} onChange={e=>setVal(e.target.value)} placeholder={mode==="set"?"New quantity":"Amount to adjust"}/>
+      {val!==""&&<div style={{marginTop:10,fontSize:13,color:C.textMuted}}>Result: <strong style={{color:C.accent,fontSize:16}}>{result()} {item.unit}</strong></div>}
+      <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:16}}>
+        <Btn onClick={()=>onSave(item.id,result())}>Update Quantity</Btn>
+      </div>
+    </div>
+  );
+}
+
+// ── Usage Log (owner inputs crew reports) ────────────────────────────────────
+function UsageLog({items,setItems,jobs,logs,setLogs,notify}){
+  const active=jobs.filter(j=>j.status==="active");
+  const [crewName,setCrewName]=useState("");
+  const [jobId,setJobId]=useState(active[0]?.id||"");
+  const [date,setDate]=useState(new Date().toISOString().slice(0,10));
+  const [notes,setNotes]=useState("");
+  const [rows,setRows]=useState([{itemId:"",qty:""}]);
+  const [search,setSearch]=useState("");
+
+  const filtered=search?items.filter(i=>i.name.toLowerCase().includes(search.toLowerCase())||i.sku.toLowerCase().includes(search.toLowerCase())):items;
+
+  const submit=()=>{
+    if(!crewName.trim()){notify("Enter crew member name.",C.red);return;}
+    if(!jobId){notify("Select a job first.",C.red);return;}
+    const valid=rows.filter(r=>r.itemId&&Number(r.qty)>0);
+    if(!valid.length){notify("Add at least one item with qty > 0.",C.red);return;}
+    const job=jobs.find(j=>j.id===jobId);
+    setItems(prev=>prev.map(item=>{
+      const row=valid.find(r=>r.itemId===item.id);
+      return row?{...item,qty:Math.max(0,item.qty-Number(row.qty))}:item;
+    }));
+    setLogs(prev=>[{
+      id:"log"+Date.now(),ts:Date.now(),date,crewName:crewName.trim(),
+      jobId,jobName:job?.name||"Unknown",notes:notes.trim(),
+      items:valid.map(r=>({
+        itemId:r.itemId,
+        itemName:items.find(i=>i.id===r.itemId)?.name||"Unknown",
+        sku:items.find(i=>i.id===r.itemId)?.sku||"",
+        qty:Number(r.qty),
+        unit:items.find(i=>i.id===r.itemId)?.unit||"each",
+      }))
+    },...prev]);
+    setCrewName("");setNotes("");setRows([{itemId:"",qty:""}]);setSearch("");
+    notify("✓ Usage logged — inventory updated!");
+  };
+
+  return(
+    <div style={{maxWidth:720}}>
+      <h2 style={{fontWeight:800,fontSize:22,marginBottom:6}}>Log Usage</h2>
+      <p style={{color:C.textMuted,fontSize:13,marginBottom:20}}>Enter what your crew used on a job. Inventory updates automatically.</p>
+      <Card>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14,marginBottom:16}}>
+          <div><label style={{fontSize:12,color:C.textMuted,display:"block",marginBottom:4}}>Crew Member *</label>
+            <Inp value={crewName} onChange={e=>setCrewName(e.target.value)} placeholder="Full name"/>
+          </div>
+          <div><label style={{fontSize:12,color:C.textMuted,display:"block",marginBottom:4}}>Job *</label>
+            <Sel value={jobId} onChange={e=>setJobId(e.target.value)}>
+              {active.length===0?<option value="">No active jobs — add one first</option>:active.map(j=><option key={j.id} value={j.id}>{j.name}</option>)}
+            </Sel>
+          </div>
+          <div><label style={{fontSize:12,color:C.textMuted,display:"block",marginBottom:4}}>Date</label>
+            <Inp type="date" value={date} onChange={e=>setDate(e.target.value)}/>
+          </div>
+        </div>
+
+        <div style={{marginBottom:14}}>
+          <label style={{fontSize:12,color:C.textMuted,display:"block",marginBottom:4}}>Filter items</label>
+          <Inp value={search} onChange={e=>setSearch(e.target.value)} placeholder="Type SKU or name to narrow list…"/>
+        </div>
+
+        <div style={{marginBottom:16}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <label style={{fontSize:11,color:C.textMuted,fontWeight:700,letterSpacing:.9,textTransform:"uppercase"}}>Materials Used *</label>
+            <Btn variant="ghost" small onClick={()=>setRows(p=>[...p,{itemId:"",qty:""}])}>+ Add Row</Btn>
+          </div>
+          {rows.map((row,i)=>(
+            <div key={i} style={{display:"flex",gap:10,marginBottom:8,alignItems:"center"}}>
+              <div style={{flex:3}}>
+                <Sel value={row.itemId} onChange={e=>setRows(p=>p.map((r,idx)=>idx===i?{...r,itemId:e.target.value}:r))}>
+                  <option value="">Select item…</option>
+                  {filtered.map(item=>(
+                    <option key={item.id} value={item.id}>[{item.sku||item.category}] {item.name} — {item.qty} {item.unit} on hand</option>
+                  ))}
+                </Sel>
+              </div>
+              <div style={{flex:1}}>
+                <Inp type="number" value={row.qty} onChange={e=>setRows(p=>p.map((r,idx)=>idx===i?{...r,qty:e.target.value}:r))} placeholder="Qty"/>
+              </div>
+              {rows.length>1&&<button onClick={()=>setRows(p=>p.filter((_,idx)=>idx!==i))} style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:18,lineHeight:1,padding:"0 4px"}}>✕</button>}
+            </div>
+          ))}
+        </div>
+
+        <div style={{marginBottom:18}}>
+          <label style={{fontSize:12,color:C.textMuted,display:"block",marginBottom:4}}>Notes (optional)</label>
+          <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Job notes, waste, special conditions…"
+            style={{width:"100%",boxSizing:"border-box",background:C.bg,border:`1px solid ${C.border}`,borderRadius:6,color:C.text,padding:"9px 12px",fontSize:13,fontFamily:"'DM Sans',system-ui,sans-serif",outline:"none",resize:"vertical",minHeight:72}}/>
+        </div>
         <Btn onClick={submit}>Submit Usage Log</Btn>
       </Card>
     </div>
   );
 }
 
-// ── Pending Review ────────────────────────────────────────────────────────────
+// ── Pending Review (crew submissions that come via the /crew page) ─────────────
 function PendingReview({pending,setPending,items,setItems,logs,setLogs,jobs,notify}){
   const approve=(sub)=>{
     const job=jobs.find(j=>j.id===sub.jobId);
-    setItems(prev=>prev.map(item=>{const row=sub.items.find(r=>r.itemId===item.id);return row?{...item,qty:Math.max(0,item.qty-Number(row.qty))}:item;}));
+    setItems(prev=>prev.map(item=>{
+      const row=sub.items.find(r=>r.itemId===item.id);
+      return row?{...item,qty:Math.max(0,item.qty-Number(row.qty))}:item;
+    }));
     setLogs(prev=>[{...sub,id:"log"+Date.now(),ts:Date.now(),jobName:job?.name||sub.jobName,reviewed:true},...prev]);
     setPending(p=>p.filter(s=>s.id!==sub.id));
-    notify("✓ Approved — inventory updated!");
+    notify("✓ Submission approved — inventory updated!");
   };
-  const reject=(id)=>{setPending(p=>p.filter(s=>s.id!==id));notify("Rejected.",C.red);};
+  const reject=(id)=>{setPending(p=>p.filter(s=>s.id!==id));notify("Submission rejected.",C.red);};
+
   return(
     <div style={{maxWidth:780}}>
       <h2 style={{fontWeight:800,fontSize:22,marginBottom:6}}>Pending Review</h2>
-      <p style={{color:C.textMuted,fontSize:13,marginBottom:20}}>Crew submissions waiting for approval before inventory is deducted.</p>
+      <p style={{color:C.textMuted,fontSize:13,marginBottom:20}}>Crew submissions waiting for your approval before inventory is deducted.</p>
       {pending.length===0
-        ?<Card><div style={{textAlign:"center",color:C.textMuted,padding:40}}>No pending submissions — all caught up!</div></Card>
+        ?<Card><div style={{textAlign:"center",color:C.textMuted,padding:40,fontSize:14}}>No pending submissions — you're all caught up!</div></Card>
         :pending.map(sub=>(
           <Card key={sub.id} style={{marginBottom:14}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12,gap:12,flexWrap:"wrap"}}>
-              <div><div style={{fontWeight:800,fontSize:16}}>{sub.crewName}</div><div style={{color:C.textMuted,fontSize:13,marginTop:2}}>{sub.jobName} · {sub.date}</div></div>
-              <div style={{display:"flex",gap:8}}><Btn variant="success" small onClick={()=>approve(sub)}>✓ Approve</Btn><Btn variant="danger" small onClick={()=>reject(sub.id)}>✕ Reject</Btn></div>
+              <div>
+                <div style={{fontWeight:800,fontSize:16}}>{sub.crewName}</div>
+                <div style={{color:C.textMuted,fontSize:13,marginTop:2}}>{sub.jobName} · {sub.date}</div>
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <Btn variant="success" small onClick={()=>approve(sub)}>✓ Approve & Deduct</Btn>
+                <Btn variant="danger" small onClick={()=>reject(sub.id)}>✕ Reject</Btn>
+              </div>
             </div>
             <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:sub.notes?10:0}}>
-              {sub.items.map((it,i)=>(<span key={i} style={{background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:6,padding:"4px 10px",fontSize:12}}><strong>{it.qty} {it.unit}</strong><span style={{color:C.textMuted}}> · {it.itemName}</span></span>))}
+              {sub.items.map((it,i)=>(
+                <span key={i} style={{background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:6,padding:"4px 10px",fontSize:12}}>
+                  <strong>{it.qty} {it.unit}</strong>
+                  <span style={{color:C.textMuted}}> · {it.itemName}</span>
+                  {it.sku&&<span style={{color:C.textDim,fontFamily:"monospace",fontSize:10}}> ({it.sku})</span>}
+                </span>
+              ))}
             </div>
-            {sub.notes&&<div style={{fontSize:12,color:C.textMuted,fontStyle:"italic",marginTop:8}}>"{sub.notes}"</div>}
+            {sub.notes&&<div style={{fontSize:12,color:C.textMuted,fontStyle:"italic",marginTop:8}}>Note: "{sub.notes}"</div>}
           </Card>
         ))}
     </div>
@@ -611,18 +954,32 @@ function History({logs,jobs}){
       <h2 style={{fontWeight:800,fontSize:22,marginBottom:18}}>Usage History</h2>
       <div style={{display:"flex",gap:12,marginBottom:18,flexWrap:"wrap"}}>
         <Inp value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search crew or job…" style={{maxWidth:260}}/>
-        <Sel value={jobFilter} onChange={e=>setJobFilter(e.target.value)} style={{maxWidth:240}}><option value="All">All Jobs</option>{jobs.map(j=><option key={j.id} value={j.id}>{j.name}</option>)}</Sel>
+        <Sel value={jobFilter} onChange={e=>setJobFilter(e.target.value)} style={{maxWidth:240}}>
+          <option value="All">All Jobs</option>
+          {jobs.map(j=><option key={j.id} value={j.id}>{j.name}</option>)}
+        </Sel>
         <span style={{color:C.textMuted,fontSize:13,alignSelf:"center"}}>{visible.length} entries</span>
       </div>
-      {visible.length===0?<Card><div style={{textAlign:"center",color:C.textMuted,padding:40}}>No usage logs yet.</div></Card>
+      {visible.length===0
+        ?<Card><div style={{textAlign:"center",color:C.textMuted,padding:40}}>No usage logs yet.</div></Card>
         :visible.map(log=>(
           <Card key={log.id} style={{marginBottom:10}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10,gap:12}}>
-              <div><span style={{fontWeight:800,fontSize:15}}>{log.crewName}</span><span style={{color:C.textMuted,marginLeft:10,fontSize:13}}>{log.jobName}</span></div>
+              <div>
+                <span style={{fontWeight:800,fontSize:15}}>{log.crewName}</span>
+                <span style={{color:C.textMuted,marginLeft:10,fontSize:13}}>{log.jobName}</span>
+                {log.reviewed&&<span style={{marginLeft:8}}><Badge color={C.blue} small>crew submit</Badge></span>}
+              </div>
               <div style={{color:C.textDim,fontSize:11,whiteSpace:"nowrap"}}>{new Date(log.ts).toLocaleString()}</div>
             </div>
             <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:log.notes?8:0}}>
-              {log.items.map((it,i)=>(<span key={i} style={{background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:6,padding:"4px 10px",fontSize:12}}><strong>{it.qty} {it.unit}</strong><span style={{color:C.textMuted}}> · {it.itemName}</span></span>))}
+              {log.items.map((it,i)=>(
+                <span key={i} style={{background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:6,padding:"4px 10px",fontSize:12}}>
+                  <strong>{it.qty} {it.unit}</strong>
+                  <span style={{color:C.textMuted}}> · {it.itemName}</span>
+                  {it.sku&&<span style={{color:C.textDim,fontFamily:"monospace",fontSize:10}}> ({it.sku})</span>}
+                </span>
+              ))}
             </div>
             {log.notes&&<div style={{fontSize:12,color:C.textMuted,fontStyle:"italic"}}>"{log.notes}"</div>}
           </Card>
@@ -642,12 +999,17 @@ function Jobs({jobs,setJobs,notify}){
         <h2 style={{fontWeight:800,fontSize:22,margin:0}}>Jobs & Projects</h2>
         <Btn small onClick={()=>setModal(true)}>+ Add Job</Btn>
       </div>
-      {jobs.length===0&&<Card><div style={{textAlign:"center",color:C.textMuted,padding:40}}>No jobs yet.</div></Card>}
+      {jobs.length===0&&<Card><div style={{textAlign:"center",color:C.textMuted,padding:40}}>No jobs yet. Add one to start logging usage.</div></Card>}
       {jobs.map(job=>(
         <Card key={job.id} style={{marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}>
-          <div><div style={{fontWeight:700,fontSize:15,marginBottom:6}}>{job.name}</div><Badge color={job.status==="active"?C.green:C.textDim}>{job.status}</Badge></div>
+          <div>
+            <div style={{fontWeight:700,fontSize:15,marginBottom:6}}>{job.name}</div>
+            <Badge color={job.status==="active"?C.green:C.textDim}>{job.status}</Badge>
+          </div>
           <div style={{display:"flex",gap:8,flexShrink:0}}>
-            <Btn variant="ghost" small onClick={()=>setJobs(p=>p.map(j=>j.id===job.id?{...j,status:j.status==="active"?"completed":"active"}:j))}>{job.status==="active"?"Mark Complete":"Reactivate"}</Btn>
+            <Btn variant="ghost" small onClick={()=>setJobs(p=>p.map(j=>j.id===job.id?{...j,status:j.status==="active"?"completed":"active"}:j))}>
+              {job.status==="active"?"Mark Complete":"Reactivate"}
+            </Btn>
             <Btn variant="danger" small onClick={()=>{setJobs(p=>p.filter(j=>j.id!==job.id));notify("Removed.",C.red);}}>✕</Btn>
           </div>
         </Card>
@@ -655,78 +1017,16 @@ function Jobs({jobs,setJobs,notify}){
       {modal&&(
         <Modal title="Add Job" onClose={()=>setModal(false)}>
           <div style={{display:"flex",flexDirection:"column",gap:14}}>
-            <div><label style={{fontSize:12,color:C.textMuted,display:"block",marginBottom:4}}>Job Name *</label><Inp value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. 123 Oak Ave — Naples"/></div>
-            <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}><Btn variant="secondary" onClick={()=>setModal(false)}>Cancel</Btn><Btn onClick={add}>Add Job</Btn></div>
+            <div><label style={{fontSize:12,color:C.textMuted,display:"block",marginBottom:4}}>Job Name *</label>
+              <Inp value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. 123 Oak Ave — Naples"/>
+            </div>
+            <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+              <Btn variant="secondary" onClick={()=>setModal(false)}>Cancel</Btn>
+              <Btn onClick={add}>Add Job</Btn>
+            </div>
           </div>
         </Modal>
       )}
-    </div>
-  );
-}
-
-// ── Settings ──────────────────────────────────────────────────────────────────
-function Settings({geminiKey,setGeminiKey,notify}){
-  const [draft,setDraft]=useState(geminiKey);
-  const [show,setShow]=useState(false);
-  const save=()=>{setGeminiKey(draft.trim());notify("API key saved!");};
-  const clear=()=>{setDraft("");setGeminiKey("");notify("Key cleared.",C.red);};
-  return(
-    <div style={{maxWidth:580}}>
-      <h2 style={{fontWeight:800,fontSize:22,marginBottom:6}}>Settings</h2>
-      <p style={{color:C.textMuted,fontSize:13,marginBottom:24,lineHeight:1.6}}>Configure your API keys and preferences.</p>
-      <Card>
-        <div style={{fontWeight:800,fontSize:15,marginBottom:4}}>🔑 Gemini API Key</div>
-        <p style={{color:C.textMuted,fontSize:13,marginBottom:16,lineHeight:1.6}}>
-          Required for Work Orders PDF reading. Get your free key at{" "}
-          <a href="https://aistudio.google.com" target="_blank" style={{color:C.accent}}>aistudio.google.com</a>.
-          Your key is stored only in this browser — never sent anywhere except Google's API.
-        </p>
-        <div style={{display:"flex",gap:10,marginBottom:12}}>
-          <Inp
-            type={show?"text":"password"}
-            value={draft}
-            onChange={e=>setDraft(e.target.value)}
-            placeholder="AIzaSy…"
-            style={{fontFamily:"monospace",fontSize:13}}
-          />
-          <Btn variant="ghost" small onClick={()=>setShow(s=>!s)}>{show?"Hide":"Show"}</Btn>
-        </div>
-        <div style={{display:"flex",gap:10}}>
-          <Btn onClick={save}>Save Key</Btn>
-          {geminiKey&&<Btn variant="danger" onClick={clear}>Clear</Btn>}
-        </div>
-        {geminiKey&&(
-          <div style={{marginTop:14,display:"flex",alignItems:"center",gap:8}}>
-            <Badge color={C.green}>✓ Key saved</Badge>
-            <span style={{fontSize:12,color:C.textMuted}}>Work Orders PDF reading is enabled</span>
-          </div>
-        )}
-      </Card>
-
-      <Card style={{marginTop:16}}>
-        <div style={{fontWeight:800,fontSize:15,marginBottom:4}}>📱 Crew Page URL</div>
-        <p style={{color:C.textMuted,fontSize:13,marginBottom:12,lineHeight:1.6}}>Share this link with your crew so they can submit job usage reports.</p>
-        <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:6,padding:"10px 14px",fontFamily:"monospace",fontSize:13,color:C.accent,wordBreak:"break-all"}}>
-          {window.location.origin}/crew.html
-        </div>
-        <Btn variant="ghost" small style={{marginTop:10}} onClick={()=>{navigator.clipboard.writeText(window.location.origin+"/crew.html");notify("Crew URL copied!");}}>
-          Copy Link
-        </Btn>
-      </Card>
-
-      <Card style={{marginTop:16}}>
-        <div style={{fontWeight:800,fontSize:15,marginBottom:4}}>⚠ Data & Storage</div>
-        <p style={{color:C.textMuted,fontSize:13,marginBottom:12,lineHeight:1.6}}>
-          All your inventory data is stored in <strong style={{color:C.text}}>this browser only</strong>. Always use the same browser on the same device to access your data. Use the Export button in Inventory to back up your data as an Excel file.
-        </p>
-        <Btn variant="ghost" small onClick={()=>{
-          const data={items:lsGet("gb:items"),jobs:lsGet("gb:jobs"),logs:lsGet("gb:logs")};
-          const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
-          const a=document.createElement("a");a.href=URL.createObjectURL(blob);
-          a.download=`tradestock-backup-${new Date().toISOString().slice(0,10)}.json`;a.click();
-          notify("Backup downloaded!");
-        }}>⬇ Download Full Backup (JSON)</Btn>
-      </Card>
     </div>
   );
 }
