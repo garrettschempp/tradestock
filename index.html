@@ -1049,15 +1049,15 @@ function WorkOrders({items,workOrders,setWorkOrders,geminiKey,notify,setTab}){
   const toB64=(file)=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(",")[1]);r.onerror=rej;r.readAsDataURL(file);});
   const uploadPDF=async(e)=>{
     const file=e.target.files[0];if(!file)return;
-    if(!geminiKey){notify("Add your Gemini API key in Settings first.",C.red);setTab("settings");return;}
+    if(!geminiKey){notify("Add your OpenAI API key in Settings first.",C.red);setTab("settings");return;}
     setLoading(true);notify("Reading work order with AI...",C.blue);
     try{
       const b64=await toB64(file);
       const prompt="Read this ServiceBridge gutter work order PDF. Find every line item with a SKU code and quantity. SKU codes look like: 6ENL, USA-5SS-C, OGG-5-FM, 4AEL, 5ENL, 3X4-DS-WHI, 5HFH, 6HFEH, 3ROT, etc. Respond with ONLY valid JSON, no markdown, no explanation: {\"jobName\":\"name or address\",\"workOrderNumber\":\"WO# or null\",\"date\":\"date or null\",\"lineItems\":[{\"sku\":\"CODE\",\"description\":\"item desc\",\"qty\":10,\"unit\":\"each\"}]}";
-      const resp=await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key="+geminiKey,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{parts:[{text:prompt},{inline_data:{mime_type:"application/pdf",data:b64}}]}],generationConfig:{temperature:0.1,maxOutputTokens:2048}})});
+      const resp=await fetch("https://api.openai.com/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+geminiKey},body:JSON.stringify({model:"gpt-4o",max_tokens:2048,messages:[{role:"user",content:[{type:"text",text:prompt},{type:"image_url",image_url:{url:"data:application/pdf;base64,"+b64}}]}]})});
       const data=await resp.json();
-      if(data.error){notify("Gemini error: "+data.error.message,C.red);setLoading(false);return;}
-      let raw=((data.candidates||[])[0]?.content?.parts?.[0]?.text||"{}").replace(/```json|```/g,"").trim();
+      if(data.error){notify("OpenAI error: "+data.error.message,C.red);setLoading(false);return;}
+      let raw=((data.choices||[])[0]?.message?.content||"{}").replace(/```json|```/g,"").trim();
       const parsed=JSON.parse(raw);
       const matched=(parsed.lineItems||[]).map(li=>{
         const inv=items.find(i=>i.sku&&i.sku.toLowerCase()===li.sku.toLowerCase());
@@ -1104,7 +1104,7 @@ function WorkOrders({items,workOrders,setWorkOrders,geminiKey,notify,setTab}){
         <Card style={{marginBottom:20,border:"1px solid "+C.accent+"44",background:C.accent+"0a"}}>
           <div style={{display:"flex",gap:14,alignItems:"center"}}>
             <div style={{fontSize:32}}>🔑</div>
-            <div><div style={{fontWeight:800,marginBottom:4}}>Gemini API Key Required</div><div style={{color:C.textMuted,fontSize:13}}>Go to the Settings tab and paste your key to enable PDF reading.</div></div>
+            <div><div style={{fontWeight:800,marginBottom:4}}>OpenAI API Key Required</div><div style={{color:C.textMuted,fontSize:13}}>Go to the Settings tab and paste your OpenAI key to enable PDF reading.</div></div>
             <Btn small onClick={()=>setTab("settings")} style={{marginLeft:"auto",flexShrink:0}}>Go to Settings</Btn>
           </div>
         </Card>
@@ -1202,8 +1202,8 @@ function Settings({geminiKey,setGeminiKey,notify}){
     <div style={{maxWidth:580}}>
       <h2 style={{fontWeight:800,fontSize:22,marginBottom:20}}>Settings</h2>
       <Card style={{marginBottom:16}}>
-        <div style={{fontWeight:800,fontSize:15,marginBottom:8}}>Gemini API Key</div>
-        <p style={{color:C.textMuted,fontSize:13,marginBottom:14,lineHeight:1.6}}>Required for Work Orders PDF reading. Get yours free at <a href="https://aistudio.google.com" target="_blank" style={{color:C.accent}}>aistudio.google.com</a>. Stored only in this browser — never shared.</p>
+        <div style={{fontWeight:800,fontSize:15,marginBottom:8}}>OpenAI API Key</div>
+        <p style={{color:C.textMuted,fontSize:13,marginBottom:14,lineHeight:1.6}}>Required for Work Orders PDF reading. Get yours at <a href="https://platform.openai.com/api-keys" target="_blank" style={{color:C.accent}}>aistudio.google.com</a>. Stored only in this browser — never shared.</p>
         <div style={{display:"flex",gap:10,marginBottom:12}}>
           <Inp type={show?"text":"password"} value={draft} onChange={e=>setDraft(e.target.value)} placeholder="AIzaSy..." style={{fontFamily:"monospace",fontSize:13}}/>
           <Btn variant="ghost" small onClick={()=>setShow(s=>!s)}>{show?"Hide":"Show"}</Btn>
