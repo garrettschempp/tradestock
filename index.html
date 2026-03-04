@@ -601,6 +601,7 @@ function Inventory({items,setItems,notify,apiKey}){
   const [modal,setModal]=useState(null);
   const [adjModal,setAdjModal]=useState(null);
   const [receiveModal,setReceiveModal]=useState(false);
+  const importRef=useRef();
   const [page,setPage]=useState(1);
   const PS=50;
 
@@ -668,10 +669,10 @@ function Inventory({items,setItems,notify,apiKey}){
         </h2>
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
           <Btn variant="ghost" small onClick={exportExcel}>⬇ Export</Btn>
-          <label style={{cursor:"pointer"}}>
-            <Btn variant="ghost" small onClick={()=>{}}>⬆ Import</Btn>
-            <input type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={importExcel}/>
-          </label>
+          <div>
+            <Btn variant="ghost" small onClick={()=>importRef.current&&importRef.current.click()}>⬆ Import</Btn>
+            <input ref={importRef} type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={importExcel}/>
+          </div>
           <Btn variant="secondary" small onClick={()=>setReceiveModal(true)}>📦 Receive Stock</Btn>
           <Btn small onClick={()=>{setForm(emptyForm);setModal("add");}}>+ Add Item</Btn>
         </div>
@@ -738,6 +739,7 @@ function Inventory({items,setItems,notify,apiKey}){
         </div>
       )}
 
+      {receiveModal&&(<Modal title="Receive Stock" onClose={()=>setReceiveModal(false)} wide><ReceiveStock items={items} setItems={setItems} notify={notify} onClose={()=>setReceiveModal(false)} apiKey={apiKey}/></Modal>)}
       {adjModal&&(
         <Modal title={`Adjust: ${adjModal.name}`} onClose={()=>setAdjModal(null)}>
           <AdjustModal item={adjModal} onSave={(id,n)=>{setItems(p=>p.map(i=>i.id===id?{...i,qty:n}:i));notify("Quantity updated!");setAdjModal(null);}}/>
