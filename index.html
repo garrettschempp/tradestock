@@ -499,7 +499,7 @@ function App(){
 
       <div style={{padding:"20px",maxWidth:1400,margin:"0 auto"}}>
         {tab==="dashboard"&&<Dashboard items={items} logs={logs} jobs={jobs} pending={pending}/>}
-        {tab==="inventory"&&<Inventory items={items} setItems={setItems} notify={notify}/>}
+        {tab==="inventory"&&<Inventory items={items} setItems={setItems} notify={notify} apiKey={geminiKey}/>}
         {tab==="usage"&&<UsageLog items={items} setItems={setItems} jobs={jobs} logs={logs} setLogs={setLogs} notify={notify}/>}
         {tab==="pending"&&<PendingReview pending={pending} setPending={setPending} items={items} setItems={setItems} logs={logs} setLogs={setLogs} jobs={jobs} notify={notify}/>}
         {tab==="history"&&<History logs={logs} jobs={jobs}/>}
@@ -594,12 +594,13 @@ function Dashboard({items,logs,jobs,pending}){
 }
 
 // ── Inventory ─────────────────────────────────────────────────────────────────
-function Inventory({items,setItems,notify}){
+function Inventory({items,setItems,notify,apiKey}){
   const [search,setSearch]=useState("");
   const [cat,setCat]=useState("All");
   const [sup,setSup]=useState("All");
   const [modal,setModal]=useState(null);
   const [adjModal,setAdjModal]=useState(null);
+  const [receiveModal,setReceiveModal]=useState(false);
   const [page,setPage]=useState(1);
   const PS=50;
 
@@ -671,6 +672,7 @@ function Inventory({items,setItems,notify}){
             <Btn variant="ghost" small onClick={()=>{}}>⬆ Import</Btn>
             <input type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={importExcel}/>
           </label>
+          <Btn variant="secondary" small onClick={()=>setReceiveModal(true)}>📦 Receive Stock</Btn>
           <Btn small onClick={()=>{setForm(emptyForm);setModal("add");}}>+ Add Item</Btn>
         </div>
       </div>
@@ -1039,6 +1041,178 @@ function Jobs({jobs,setJobs,notify}){
   );
 }
 
+
+// ReceiveStock
+function ReceiveStock({items,setItems,notify,onClose,apiKey}){
+  const [mode,setMode]=useState("manual"); // "manual" | "pdf"
+  const [loading,setLoading]=useState(false);
+  const [rows,setRows]=useState([]); // [{itemId,sku,name,qty,adding}]
+  const [search,setSearch]=useState("");
+  const [pdfLines,setPdfLines]=useState(null); // parsed from AI
+  const fileRef=useRef();
+
+  const filtered=search?items.filter(i=>(i.name+i.sku).toLowerCase().includes(search.toLowerCase())):items;
+
+  // Manual: add a row
+  const addRow=(item)=>{
+    if(rows.find(r=>r.itemId===item.id))return;
+    setRows(p=>[...p,{itemId:item.id,sku:item.sku,name:item.name,unit:item.unit,qty:"",current:item.qty}]);
+    setSearch("");
+  };
+
+  // Apply manual rows to inventory
+  const applyManual=()=>{
+    const valid=rows.filter(r=>Number(r.qty)>0);
+    if(!valid.length){notify("Enter at least one quantity.",C.red);return;}
+    setItems(prev=>prev.map(item=>{
+      const row=valid.find(r=>r.itemId===item.id);
+      return row?{...item,qty:item.qty+Number(row.qty)}:item;
+    }));
+    notify("✓ Stock updated — "+valid.length+" item"+(valid.length!==1?"s":"")+" received!");
+    onClose();
+  };
+
+  // PDF upload → AI parse
+  const toB64=(file)=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(",")[1]);r.onerror=rej;r.readAsDataURL(file);});
+
+  const uploadInvoice=async(e)=>{
+    const file=e.target.files[0];if(!file)return;
+    if(!apiKey){notify("Add your OpenAI API key in Settings first.",C.red);return;}
+    setLoading(true);notify("Reading invoice with AI...",C.blue);
+    try{
+      const b64=await toB64(file);
+      const prompt="This is a supplier invoice for gutter installation materials. Extract every line item with a SKU/product code and quantity received. Respond with ONLY valid JSON, no markdown: {\"supplier\":\"supplier name\",\"invoiceNumber\":\"invoice# or null\",\"date\":\"date or null\",\"lineItems\":[{\"sku\":\"CODE\",\"description\":\"item description\",\"qty\":10,\"unit\":\"each\"}]}";
+      const resp=await fetch("https://api.openai.com/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+apiKey},body:JSON.stringify({model:"gpt-4o",max_tokens:2048,messages:[{role:"user",content:[{type:"text",text:prompt},{type:"image_url",image_url:{url:"data:application/pdf;base64,"+b64}}]}]})});
+      const data=await resp.json();
+      if(data.error){notify("OpenAI error: "+data.error.message,C.red);setLoading(false);return;}
+      let raw=((data.choices||[])[0]?.message?.content||"{}").replace(/```json|```/g,"").trim();
+      const parsed=JSON.parse(raw);
+      // Match to inventory
+      const lines=(parsed.lineItems||[]).map(li=>{
+        const inv=items.find(i=>i.sku&&i.sku.toLowerCase()===li.sku.toLowerCase());
+        return{...li,inventoryItem:inv||null,matched:!!inv,apply:!!inv,qty:Number(li.qty)||0};
+      });
+      setPdfLines({...parsed,lineItems:lines});
+      notify("Invoice read — "+lines.length+" items found");
+    }catch(err){notify("Error: "+err.message,C.red);}
+    setLoading(false);if(e.target)e.target.value="";
+  };
+
+  // Apply PDF lines to inventory
+  const applyPdf=()=>{
+    const toApply=(pdfLines.lineItems||[]).filter(li=>li.apply&&li.matched&&li.qty>0);
+    if(!toApply.length){notify("No matched items selected.",C.red);return;}
+    setItems(prev=>prev.map(item=>{
+      const li=toApply.find(l=>l.inventoryItem&&l.inventoryItem.id===item.id);
+      return li?{...item,qty:item.qty+li.qty}:item;
+    }));
+    notify("✓ Stock updated — "+toApply.length+" item"+(toApply.length!==1?"s":"")+" received!");
+    onClose();
+  };
+
+  return(
+    <div>
+      {/* Mode toggle */}
+      <div style={{display:"flex",gap:8,marginBottom:20}}>
+        {[["manual","📝 Manual Entry"],["pdf","📄 Upload Invoice PDF"]].map(([m,l])=>(
+          <button key={m} onClick={()=>{setMode(m);setPdfLines(null);setRows([]);}} style={{flex:1,padding:"10px 0",borderRadius:6,border:"1px solid "+(mode===m?C.accent:C.border),background:mode===m?C.accent+"20":"transparent",color:mode===m?C.accent:C.textMuted,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>
+        ))}
+      </div>
+
+      {mode==="manual"&&(
+        <div>
+          <div style={{marginBottom:12}}>
+            <Inp value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search SKU or item name to add..."/>
+            {search&&(
+              <div style={{background:C.bg,border:"1px solid "+C.border,borderRadius:6,marginTop:4,maxHeight:200,overflowY:"auto"}}>
+                {filtered.slice(0,20).map(item=>(
+                  <div key={item.id} onClick={()=>addRow(item)} style={{padding:"9px 12px",cursor:"pointer",borderBottom:"1px solid "+C.border+"44",fontSize:13,display:"flex",justifyContent:"space-between",alignItems:"center"}}
+                    onMouseEnter={e=>e.currentTarget.style.background=C.surfaceAlt}
+                    onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                    <div><span style={{fontFamily:"monospace",fontSize:11,color:C.textMuted,marginRight:8}}>{item.sku}</span>{item.name}</div>
+                    <span style={{color:C.textMuted,fontSize:11}}>{item.qty} on hand</span>
+                  </div>
+                ))}
+                {filtered.length===0&&<div style={{padding:12,color:C.textMuted,fontSize:13}}>No items found</div>}
+              </div>
+            )}
+          </div>
+          {rows.length===0
+            ?<div style={{textAlign:"center",padding:32,color:C.textMuted,fontSize:13,border:"1px dashed "+C.border,borderRadius:8}}>Search above and click items to add them</div>
+            :<div>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,marginBottom:16}}>
+                <thead><tr style={{borderBottom:"1px solid "+C.border}}>{["SKU","Item","On Hand","Qty Receiving",""].map(h=>(<th key={h} style={{padding:"7px 10px",textAlign:"left",color:C.textMuted,fontSize:10,fontWeight:700,textTransform:"uppercase"}}>{h}</th>))}</tr></thead>
+                <tbody>{rows.map((row,i)=>(
+                  <tr key={row.itemId} style={{borderBottom:"1px solid "+C.border+"22"}}>
+                    <td style={{padding:"8px 10px",fontFamily:"monospace",fontSize:11,color:C.textMuted}}>{row.sku}</td>
+                    <td style={{padding:"8px 10px"}}>{row.name}</td>
+                    <td style={{padding:"8px 10px",color:C.textMuted}}>{row.current} {row.unit}</td>
+                    <td style={{padding:"8px 10px",width:120}}>
+                      <Inp type="number" value={row.qty} onChange={e=>setRows(p=>p.map((r,idx)=>idx===i?{...r,qty:e.target.value}:r))} placeholder="0"/>
+                    </td>
+                    <td style={{padding:"8px 10px"}}><button onClick={()=>setRows(p=>p.filter((_,idx)=>idx!==i))} style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:16}}>✕</button></td>
+                  </tr>
+                ))}</tbody>
+              </table>
+              <div style={{display:"flex",justifyContent:"flex-end",gap:10}}>
+                <Btn variant="secondary" onClick={onClose}>Cancel</Btn>
+                <Btn onClick={applyManual}>+ Add to Inventory</Btn>
+              </div>
+            </div>
+          }
+        </div>
+      )}
+
+      {mode==="pdf"&&!pdfLines&&(
+        <div>
+          {!apiKey&&<Card style={{marginBottom:16,border:"1px solid "+C.accent+"44",background:C.accent+"0a"}}><div style={{fontWeight:700,marginBottom:4}}>OpenAI API Key Required</div><div style={{color:C.textMuted,fontSize:13}}>Go to Settings and add your key first.</div></Card>}
+          <div style={{textAlign:"center",padding:40,border:"2px dashed "+C.border,borderRadius:10}}>
+            <div style={{fontSize:48,marginBottom:12}}>📄</div>
+            <div style={{fontWeight:700,fontSize:15,marginBottom:8}}>Upload Supplier Invoice</div>
+            <div style={{color:C.textMuted,fontSize:13,marginBottom:20}}>Works with Spectra, US Aluminum, OGG invoices</div>
+            <label style={{cursor:"pointer"}}>
+              <Btn onClick={()=>fileRef.current&&fileRef.current.click()} disabled={loading||!apiKey}>{loading?"Reading invoice...":"Choose Invoice PDF"}</Btn>
+              <input ref={fileRef} type="file" accept=".pdf" style={{display:"none"}} onChange={uploadInvoice}/>
+            </label>
+          </div>
+        </div>
+      )}
+
+      {mode==="pdf"&&pdfLines&&(
+        <div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:10}}>
+            <div>
+              <div style={{fontWeight:800,fontSize:15}}>{pdfLines.supplier||"Invoice"}{pdfLines.invoiceNumber?" #"+pdfLines.invoiceNumber:""}</div>
+              <div style={{color:C.textMuted,fontSize:12,marginTop:2}}>{pdfLines.date||""} · {pdfLines.lineItems.length} items · {pdfLines.lineItems.filter(l=>l.matched).length} matched to inventory</div>
+            </div>
+            <Btn variant="ghost" small onClick={()=>setPdfLines(null)}>Upload Different Invoice</Btn>
+          </div>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,marginBottom:16}}>
+            <thead><tr style={{borderBottom:"1px solid "+C.border,background:C.surfaceAlt}}>{["","SKU","Description","Qty","Status"].map(h=>(<th key={h} style={{padding:"8px 10px",textAlign:"left",color:C.textMuted,fontSize:10,fontWeight:700,textTransform:"uppercase"}}>{h}</th>))}</tr></thead>
+            <tbody>{pdfLines.lineItems.map((li,i)=>(
+              <tr key={i} style={{borderBottom:"1px solid "+C.border+"22",opacity:li.matched?1:0.5}}>
+                <td style={{padding:"8px 10px"}}>
+                  {li.matched&&<input type="checkbox" checked={li.apply} onChange={e=>setPdfLines(p=>({...p,lineItems:p.lineItems.map((l,idx)=>idx===i?{...l,apply:e.target.checked}:l)}))} style={{cursor:"pointer"}}/>}
+                </td>
+                <td style={{padding:"8px 10px",fontFamily:"monospace",fontSize:11,color:C.textMuted}}>{li.sku}</td>
+                <td style={{padding:"8px 10px"}}>{li.description||li.inventoryItem&&li.inventoryItem.name||"—"}</td>
+                <td style={{padding:"8px 10px",fontWeight:700,color:C.accent}}>{li.qty} {li.unit||""}</td>
+                <td style={{padding:"8px 10px"}}><Badge color={li.matched?C.green:C.textMuted} small>{li.matched?"Matched":"Unknown SKU"}</Badge></td>
+              </tr>
+            ))}</tbody>
+          </table>
+          {pdfLines.lineItems.filter(l=>!l.matched).length>0&&(
+            <div style={{fontSize:12,color:C.textMuted,marginBottom:14}}>⚠ {pdfLines.lineItems.filter(l=>!l.matched).length} unmatched SKUs will be skipped. Check if they need to be added to inventory manually.</div>
+          )}
+          <div style={{display:"flex",justifyContent:"flex-end",gap:10}}>
+            <Btn variant="secondary" onClick={onClose}>Cancel</Btn>
+            <Btn onClick={applyPdf}>+ Add Checked Items to Inventory</Btn>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // WorkOrders
 function WorkOrders({items,workOrders,setWorkOrders,geminiKey,notify,setTab}){
