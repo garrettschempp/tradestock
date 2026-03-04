@@ -2382,6 +2382,7 @@ function App(){
   const [pending,setPending]=useState(()=>lsGet("gb:pending")||[]);
   const [workOrders,setWorkOrders]=useState(()=>lsGet("gb:workorders")||[]);
   const [geminiKey,setGeminiKey]=useState(()=>localStorage.getItem("gb:geminiKey")||"");
+  const [skuMappings,setSkuMappings]=useState(()=>lsGet("gb:skumappings")||[]);
   const [toast,setToast]=useState(null);
 
   useEffect(()=>lsSet("gb:items",items),[items]);
@@ -2390,6 +2391,7 @@ function App(){
   useEffect(()=>lsSet("gb:pending",pending),[pending]);
   useEffect(()=>lsSet("gb:workorders",workOrders),[workOrders]);
   useEffect(()=>{if(geminiKey)localStorage.setItem("gb:geminiKey",geminiKey);},[geminiKey]);
+  useEffect(()=>lsSet("gb:skumappings",skuMappings),[skuMappings]);
 
   const notify=(msg,color=C.green)=>{setToast({msg,color});setTimeout(()=>setToast(null),3500);};
 
@@ -2438,8 +2440,8 @@ function App(){
         {tab==="pending"&&<PendingReview pending={pending} setPending={setPending} items={items} setItems={setItems} logs={logs} setLogs={setLogs} jobs={jobs} notify={notify}/>}
         {tab==="history"&&<History logs={logs} jobs={jobs}/>}
         {tab==="jobs"&&<Jobs jobs={jobs} setJobs={setJobs} notify={notify}/>}
-        {tab==="workorders"&&<WorkOrders items={items} workOrders={workOrders} setWorkOrders={setWorkOrders} geminiKey={geminiKey} notify={notify} setTab={setTab}/>}
-        {tab==="settings"&&<Settings geminiKey={geminiKey} setGeminiKey={setGeminiKey} notify={notify}/>}
+        {tab==="workorders"&&<WorkOrders items={items} workOrders={workOrders} setWorkOrders={setWorkOrders} geminiKey={geminiKey} skuMappings={skuMappings} notify={notify} setTab={setTab}/>}
+        {tab==="settings"&&<Settings geminiKey={geminiKey} setGeminiKey={setGeminiKey} skuMappings={skuMappings} setSkuMappings={setSkuMappings} notify={notify}/>}
       </div>
     </div>
   );
@@ -2673,7 +2675,7 @@ function Inventory({items,setItems,notify,apiKey}){
         </div>
       )}
 
-      {receiveModal&&(<Modal title="Receive Stock" onClose={()=>setReceiveModal(false)} wide><ReceiveStock items={items} setItems={setItems} notify={notify} onClose={()=>setReceiveModal(false)} apiKey={apiKey}/></Modal>)}
+      {receiveModal&&(<Modal title="Receive Stock" onClose={()=>setReceiveModal(false)} wide><ReceiveStock items={items} setItems={setItems} notify={notify} onClose={()=>setReceiveModal(false)} apiKey={apiKey} skuMappings={skuMappings}/></Modal>)}
       {adjModal&&(
         <Modal title={`Adjust: ${adjModal.name}`} onClose={()=>setAdjModal(null)}>
           <AdjustModal item={adjModal} onSave={(id,n)=>{setItems(p=>p.map(i=>i.id===id?{...i,qty:n}:i));notify("Quantity updated!");setAdjModal(null);}}/>
@@ -2979,7 +2981,7 @@ function Jobs({jobs,setJobs,notify}){
 
 
 // ReceiveStock
-function ReceiveStock({items,setItems,notify,onClose,apiKey}){
+function ReceiveStock({items,setItems,notify,onClose,apiKey,skuMappings}){
   const [mode,setMode]=useState("manual"); // "manual" | "pdf"
   const [loading,setLoading]=useState(false);
   const [rows,setRows]=useState([]); // [{itemId,sku,name,qty,adding}]
@@ -2987,6 +2989,13 @@ function ReceiveStock({items,setItems,notify,onClose,apiKey}){
   const [pdfLines,setPdfLines]=useState(null); // parsed from AI
   const fileRef=useRef();
 
+  const resolveItem=(sku)=>{
+    const direct=items.find(i=>i.sku&&i.sku.toLowerCase()===sku.toLowerCase());
+    if(direct)return{item:direct,multiplier:1};
+    const map=(skuMappings||[]).find(m=>m.supplierSku.toLowerCase()===sku.toLowerCase());
+    if(map){const item=items.find(i=>i.sku&&i.sku.toLowerCase()===map.mySku.toLowerCase());if(item)return{item,multiplier:Number(map.multiplier)||1};}
+    return null;
+  };
   const filtered=search?items.filter(i=>(i.name+i.sku).toLowerCase().includes(search.toLowerCase())):items;
 
   // Manual: add a row
@@ -3025,8 +3034,11 @@ function ReceiveStock({items,setItems,notify,onClose,apiKey}){
       const parsed=JSON.parse(raw);
       // Match to inventory
       const lines=(parsed.lineItems||[]).map(li=>{
-        const inv=items.find(i=>i.sku&&i.sku.toLowerCase()===li.sku.toLowerCase());
-        return{...li,inventoryItem:inv||null,matched:!!inv,apply:!!inv,qty:Number(li.qty)||0};
+        const resolved=resolveItem(li.sku);
+        const inv=resolved?resolved.item:null;
+        const multiplier=resolved?resolved.multiplier:1;
+        const qty=Math.round((Number(li.qty)||0)*multiplier);
+        return{...li,inventoryItem:inv||null,matched:!!inv,apply:!!inv,qty,supplierQty:Number(li.qty)||0,multiplier};
       });
       setPdfLines({...parsed,lineItems:lines});
       notify("Invoice read — "+lines.length+" items found");
@@ -3151,12 +3163,19 @@ function ReceiveStock({items,setItems,notify,onClose,apiKey}){
 }
 
 // WorkOrders
-function WorkOrders({items,workOrders,setWorkOrders,geminiKey,notify,setTab}){
+function WorkOrders({items,workOrders,setWorkOrders,geminiKey,skuMappings,notify,setTab}){
   const [loading,setLoading]=useState(false);
   const [activeWO,setActiveWO]=useState(null);
   const [poModal,setPoModal]=useState(null);
   const fileRef=useRef();
   const xlRef=useRef();
+  const resolveItem=(sku)=>{
+    const direct=items.find(i=>i.sku&&i.sku.toLowerCase()===sku.toLowerCase());
+    if(direct)return{item:direct,multiplier:1};
+    const map=(skuMappings||[]).find(m=>m.supplierSku.toLowerCase()===sku.toLowerCase());
+    if(map){const item=items.find(i=>i.sku&&i.sku.toLowerCase()===map.mySku.toLowerCase());if(item)return{item,multiplier:Number(map.multiplier)||1};}
+    return null;
+  };
   const toB64=(file)=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(",")[1]);r.onerror=rej;r.readAsDataURL(file);});
   const uploadExcel=async(e)=>{
     const file=e.target.files[0];if(!file)return;
@@ -3176,9 +3195,12 @@ function WorkOrders({items,workOrders,setWorkOrders,geminiKey,notify,setTab}){
         const sku=String(r[skuCol]).trim();
         const qty=Number(r[qtyCol])||0;
         const description=descCol?String(r[descCol]||""):"";
-        const inv=items.find(i=>i.sku&&i.sku.toLowerCase()===sku.toLowerCase());
-        const need=qty,have=inv?inv.qty:0;
-        return{sku,description,qty,unit:"each",inventoryItem:inv||null,have,need,short:Math.max(0,need-have),matched:!!inv};
+        const resolved=resolveItem(sku);
+        const inv=resolved?resolved.item:null;
+        const multiplier=resolved?resolved.multiplier:1;
+        const need=Math.round(qty*multiplier);
+        const have=inv?inv.qty:0;
+        return{sku,description,qty:need,supplierQty:qty,unit:"each",inventoryItem:inv||null,have,need,short:Math.max(0,need-have),matched:!!inv,multiplier};
       }).filter(li=>li.qty>0);
       if(!lineItems.length){notify("No line items with quantities found. Check column names.",C.red);setLoading(false);return;}
       const wo={id:"wo"+Date.now(),fileName:file.name,jobName,workOrderNumber:null,date:new Date().toISOString().slice(0,10),uploadedAt:Date.now(),lineItems,totalItems:lineItems.length,shortages:lineItems.filter(i=>i.short>0).length,unmatched:lineItems.filter(i=>!i.matched).length};
@@ -3200,9 +3222,12 @@ function WorkOrders({items,workOrders,setWorkOrders,geminiKey,notify,setTab}){
       let raw=((data.content||[])[0]?.text||"{}").replace(/```json|```/g,"").trim();
       const parsed=JSON.parse(raw);
       const matched=(parsed.lineItems||[]).map(li=>{
-        const inv=items.find(i=>i.sku&&i.sku.toLowerCase()===li.sku.toLowerCase());
-        const need=Number(li.qty)||0,have=inv?inv.qty:0;
-        return{...li,inventoryItem:inv||null,have,need,short:Math.max(0,need-have),matched:!!inv};
+        const resolved=resolveItem(li.sku);
+        const inv=resolved?resolved.item:null;
+        const multiplier=resolved?resolved.multiplier:1;
+        const need=Math.round((Number(li.qty)||0)*multiplier);
+        const have=inv?inv.qty:0;
+        return{...li,inventoryItem:inv||null,have,need,short:Math.max(0,need-have),matched:!!inv,multiplier};
       });
       const wo={id:"wo"+Date.now(),fileName:file.name,jobName:parsed.jobName||file.name,workOrderNumber:parsed.workOrderNumber||null,date:parsed.date||new Date().toISOString().slice(0,10),uploadedAt:Date.now(),lineItems:matched,totalItems:matched.length,shortages:matched.filter(i=>i.short>0).length,unmatched:matched.filter(i=>!i.matched).length};
       setWorkOrders(p=>[wo,...p]);setActiveWO(wo);
@@ -3339,36 +3364,138 @@ function WorkOrders({items,workOrders,setWorkOrders,geminiKey,notify,setTab}){
 }
 
 // Settings
-function Settings({geminiKey,setGeminiKey,notify}){
+function Settings({geminiKey,setGeminiKey,skuMappings,setSkuMappings,notify}){
   const [draft,setDraft]=useState(geminiKey);
   const [show,setShow]=useState(false);
+  const emptyMap={supplierSku:"",supplierName:"",mySku:"",multiplier:"1",note:""};
+  const [mapForm,setMapForm]=useState(emptyMap);
+  const [editingMap,setEditingMap]=useState(null); // id or null
+  const [showMapForm,setShowMapForm]=useState(false);
+
+  const saveMapping=()=>{
+    if(!mapForm.supplierSku.trim()||!mapForm.mySku.trim()){notify("Supplier SKU and Your SKU are required.",C.red);return;}
+    const entry={...mapForm,id:"m"+Date.now(),supplierSku:mapForm.supplierSku.trim(),mySku:mapForm.mySku.trim(),multiplier:Number(mapForm.multiplier)||1};
+    if(editingMap){
+      setSkuMappings(p=>p.map(m=>m.id===editingMap?{...entry,id:editingMap}:m));
+      notify("Mapping updated!");
+    }else{
+      setSkuMappings(p=>[...p,entry]);
+      notify("Mapping added!");
+    }
+    setMapForm(emptyMap);setEditingMap(null);setShowMapForm(false);
+  };
+  const editMap=(m)=>{setMapForm({...m});setEditingMap(m.id);setShowMapForm(true);};
+  const deleteMap=(id)=>{setSkuMappings(p=>p.filter(m=>m.id!==id));notify("Mapping removed.",C.red);};
+
   return(
-    <div style={{maxWidth:580}}>
+    <div style={{maxWidth:720}}>
       <h2 style={{fontWeight:800,fontSize:22,marginBottom:20}}>Settings</h2>
+
       <Card style={{marginBottom:16}}>
-        <div style={{fontWeight:800,fontSize:15,marginBottom:8}}>API Key (Claude or OpenAI)</div>
-        <p style={{color:C.textMuted,fontSize:13,marginBottom:14,lineHeight:1.6}}>Required for PDF reading. Get a Claude key at <a href="https://console.anthropic.com" target="_blank" style={{color:C.accent}}>console.anthropic.com</a>. Stored only in this browser — never shared.</p>
+        <div style={{fontWeight:800,fontSize:15,marginBottom:8}}>API Key (Anthropic Claude)</div>
+        <p style={{color:C.textMuted,fontSize:13,marginBottom:14,lineHeight:1.6}}>Required for PDF reading. Get a key at <a href="https://console.anthropic.com" target="_blank" style={{color:C.accent}}>console.anthropic.com</a>. Stored only in this browser.</p>
         <div style={{display:"flex",gap:10,marginBottom:12}}>
-          <Inp type={show?"text":"password"} value={draft} onChange={e=>setDraft(e.target.value)} placeholder="AIzaSy..." style={{fontFamily:"monospace",fontSize:13}}/>
+          <Inp type={show?"text":"password"} value={draft} onChange={e=>setDraft(e.target.value)} placeholder="sk-ant-..." style={{fontFamily:"monospace",fontSize:13}}/>
           <Btn variant="ghost" small onClick={()=>setShow(s=>!s)}>{show?"Hide":"Show"}</Btn>
         </div>
         <div style={{display:"flex",gap:10}}>
           <Btn onClick={()=>{setGeminiKey(draft.trim());notify("API key saved!");}}>Save Key</Btn>
           {geminiKey&&<Btn variant="danger" onClick={()=>{setDraft("");setGeminiKey("");notify("Key cleared.",C.red);}}>Clear</Btn>}
         </div>
-        {geminiKey&&<div style={{marginTop:14,display:"flex",gap:8,alignItems:"center"}}><Badge color={C.green}>Key Saved</Badge><span style={{fontSize:12,color:C.textMuted}}>Work Orders PDF reading is enabled</span></div>}
+        {geminiKey&&<div style={{marginTop:14,display:"flex",gap:8,alignItems:"center"}}><Badge color={C.green}>Key Saved</Badge><span style={{fontSize:12,color:C.textMuted}}>PDF reading enabled</span></div>}
       </Card>
+
+      <Card style={{marginBottom:16}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <div>
+            <div style={{fontWeight:800,fontSize:15}}>SKU Mappings</div>
+            <div style={{fontSize:12,color:C.textMuted,marginTop:2}}>Map supplier SKUs to your ServiceBridge SKUs. Set a multiplier for unit conversions (e.g. 1 lb coil = 45 ft).</div>
+          </div>
+          <Btn small onClick={()=>{setMapForm(emptyMap);setEditingMap(null);setShowMapForm(s=>!s);}}>+ Add Mapping</Btn>
+        </div>
+
+        {showMapForm&&(
+          <div style={{background:C.bg,border:"1px solid "+C.border,borderRadius:8,padding:16,marginBottom:16}}>
+            <div style={{fontWeight:700,fontSize:13,marginBottom:12,color:C.accent}}>{editingMap?"Edit Mapping":"New Mapping"}</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+              <div>
+                <label style={{fontSize:11,color:C.textMuted,display:"block",marginBottom:4}}>Supplier SKU *</label>
+                <Inp value={mapForm.supplierSku} onChange={e=>setMapForm(f=>({...f,supplierSku:e.target.value}))} placeholder="e.g. EN6-L or 849271"/>
+              </div>
+              <div>
+                <label style={{fontSize:11,color:C.textMuted,display:"block",marginBottom:4}}>Supplier Name</label>
+                <Inp value={mapForm.supplierName} onChange={e=>setMapForm(f=>({...f,supplierName:e.target.value}))} placeholder="e.g. Spectra"/>
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:10}}>
+              <div>
+                <label style={{fontSize:11,color:C.textMuted,display:"block",marginBottom:4}}>Your SKU (ServiceBridge) *</label>
+                <Inp value={mapForm.mySku} onChange={e=>setMapForm(f=>({...f,mySku:e.target.value}))} placeholder="e.g. 6ENL"/>
+              </div>
+              <div>
+                <label style={{fontSize:11,color:C.textMuted,display:"block",marginBottom:4}}>Multiplier</label>
+                <Inp type="number" value={mapForm.multiplier} onChange={e=>setMapForm(f=>({...f,multiplier:e.target.value}))} placeholder="1"/>
+              </div>
+              <div>
+                <label style={{fontSize:11,color:C.textMuted,display:"block",marginBottom:4}}>Note (optional)</label>
+                <Inp value={mapForm.note} onChange={e=>setMapForm(f=>({...f,note:e.target.value}))} placeholder="e.g. 1 lb = 45 ft"/>
+              </div>
+            </div>
+            <div style={{fontSize:11,color:C.textMuted,marginBottom:12}}>
+              Multiplier: supplier qty × multiplier = your inventory qty. Use 1 for same unit. For coil: if 1 lb = 45 ft, set multiplier to 45.
+            </div>
+            <div style={{display:"flex",gap:10}}>
+              <Btn onClick={saveMapping}>{editingMap?"Save Changes":"Add Mapping"}</Btn>
+              <Btn variant="secondary" onClick={()=>{setShowMapForm(false);setEditingMap(null);setMapForm(emptyMap);}}>Cancel</Btn>
+            </div>
+          </div>
+        )}
+
+        {skuMappings.length===0
+          ?<div style={{textAlign:"center",padding:28,color:C.textMuted,fontSize:13,border:"1px dashed "+C.border,borderRadius:8}}>No mappings yet. Add one when you encounter a supplier SKU that doesn't match your inventory.</div>
+          :<div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+              <thead>
+                <tr style={{borderBottom:"1px solid "+C.border,background:C.surfaceAlt}}>
+                  {["Supplier SKU","Supplier","Your SKU","Multiplier","Note",""].map(h=>(
+                    <th key={h} style={{padding:"8px 10px",textAlign:"left",color:C.textMuted,fontSize:10,fontWeight:700,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {skuMappings.map(m=>(
+                  <tr key={m.id} style={{borderBottom:"1px solid "+C.border+"22"}}>
+                    <td style={{padding:"8px 10px",fontFamily:"monospace",fontSize:12,color:C.accent}}>{m.supplierSku}</td>
+                    <td style={{padding:"8px 10px",color:C.textMuted,fontSize:12}}>{m.supplierName||"—"}</td>
+                    <td style={{padding:"8px 10px",fontFamily:"monospace",fontSize:12}}>{m.mySku}</td>
+                    <td style={{padding:"8px 10px",fontFamily:"monospace",fontSize:12,color:Number(m.multiplier)!==1?C.teal:C.textMuted}}>{m.multiplier}×</td>
+                    <td style={{padding:"8px 10px",color:C.textDim,fontSize:11}}>{m.note||"—"}</td>
+                    <td style={{padding:"8px 10px"}}>
+                      <div style={{display:"flex",gap:6}}>
+                        <Btn variant="ghost" small onClick={()=>editMap(m)}>Edit</Btn>
+                        <Btn variant="danger" small onClick={()=>deleteMap(m.id)}>✕</Btn>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        }
+      </Card>
+
       <Card style={{marginBottom:16}}>
         <div style={{fontWeight:800,fontSize:15,marginBottom:8}}>Crew Page URL</div>
-        <p style={{color:C.textMuted,fontSize:13,marginBottom:10}}>Share this link with your crew so they can submit job usage reports from their phones.</p>
+        <p style={{color:C.textMuted,fontSize:13,marginBottom:10}}>Share this with your crew for job submissions.</p>
         <div style={{background:C.bg,border:"1px solid "+C.border,borderRadius:6,padding:"10px 14px",fontFamily:"monospace",fontSize:13,color:C.accent,wordBreak:"break-all"}}>{window.location.origin+"/crew.html"}</div>
         <Btn variant="ghost" small style={{marginTop:10}} onClick={()=>{navigator.clipboard.writeText(window.location.origin+"/crew.html");notify("Crew URL copied!");}}>Copy Link</Btn>
       </Card>
+
       <Card>
         <div style={{fontWeight:800,fontSize:15,marginBottom:8}}>Data Backup</div>
-        <p style={{color:C.textMuted,fontSize:13,marginBottom:12,lineHeight:1.6}}>All inventory data lives in this browser only. Use the Export button in Inventory regularly, or download a full JSON backup here.</p>
+        <p style={{color:C.textMuted,fontSize:13,marginBottom:12,lineHeight:1.6}}>All data lives in this browser only. Export regularly.</p>
         <Btn variant="ghost" small onClick={()=>{
-          const d={items:lsGet("gb:items"),jobs:lsGet("gb:jobs"),logs:lsGet("gb:logs"),workOrders:lsGet("gb:workorders")};
+          const d={items:lsGet("gb:items"),jobs:lsGet("gb:jobs"),logs:lsGet("gb:logs"),workOrders:lsGet("gb:workorders"),skuMappings:lsGet("gb:skumappings")};
           const b=new Blob([JSON.stringify(d,null,2)],{type:"application/json"});
           const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="tradestock-backup-"+new Date().toISOString().slice(0,10)+".json";a.click();
           notify("Backup downloaded!");
