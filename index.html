@@ -40,13 +40,84 @@ const CATEGORIES=["Gutter Coil","K-Style Gutters","Half Round Gutters","Copper G
 const SUPPLIERS=["All","Spectra","US Aluminum","OGG","Other"];
 const UNITS=["each","ft","lb","box","bag","roll","bulk","ctn"];
 const SUP_COLOR={"Spectra":C.blue,"US Aluminum":C.accent,"OGG":C.green,"Other":C.textMuted};
+
+// ── Coil Conversion ───────────────────────────────────────────────────────────
+// Maps K-Style gutter size → Spectra coil SKU base + ft-per-lb yield
+const COIL_MAP = {
+  '5': { coilBase: '032(11&11875)', ftPerLb: 2.239, label: '5" → 032X 11-3/4"' },
+  '6': { coilBase: '03215',         ftPerLb: 1.76,  label: '6" → 032X 15"' },
+  '7': { coilBase: '03217875',      ftPerLb: 1.462, label: '7" → 032X 17-7/8"' },
+};
+
+// Spectra color code lookup by color name keywords
+const SPECTRA_COLORS = {
+  '80 white':      '8W', 'high gloss white': '8W', 'high gloss': '8W',
+  '30 white':      '3W', 'low gloss white':  '3W', 'white': '3W',
+  'linen':         'LN',
+  'almond':        'AL',
+  'cream':         'CR',
+  'wicker':        'WW',
+  'clay':          'CL',
+  'terratone':     'TT',
+  'antique ivory': 'AI',
+  'coco brown':    'CB',
+  'musket brown':  'MB', 'musket': 'MB',
+  'royal brown':   'RB',
+  'pearl gray':    'GY',
+  'colonial gray': 'CG',
+  'dove gray':     'DG',
+  'tuxedo gray':   'TG', 'tuxedo': 'TG',
+  'traditional blue': 'TB',
+  'scotch red':    'SR',
+  'forest green':  'FG',
+  'designer copper': 'DCP',
+  'bronze':        'BZ',
+  'copper':        'CP',
+  'galvalume':     'GALVALUME',
+};
+
+function getSpectraColorCode(itemName) {
+  if (!itemName) return null;
+  const n = itemName.toLowerCase();
+  // Try longest match first
+  const sorted = Object.keys(SPECTRA_COLORS).sort((a,b) => b.length - a.length);
+  for (const key of sorted) {
+    if (n.includes(key)) return SPECTRA_COLORS[key];
+  }
+  return null;
+}
+
+function getCoilOrder(item, ftNeeded) {
+  // Only applies to K-Style gutters
+  if (!item || item.category !== 'K-Style Gutters') return null;
+  // Extract size from name or SKU (5, 6, or 7 inch)
+  const sizeMatch = (item.name + ' ' + item.sku).match(/\b([567])["s]/);
+  if (!sizeMatch) return null;
+  const size = sizeMatch[1];
+  const coilInfo = COIL_MAP[size];
+  if (!coilInfo) return null;
+  // Get color code
+  const colorCode = getSpectraColorCode(item.name);
+  const spectraSku = colorCode ? coilInfo.coilBase + colorCode : coilInfo.coilBase + '__';
+  const lbsNeeded = ftNeeded / coilInfo.ftPerLb;
+  return {
+    spectraSku,
+    colorCode,
+    coilBase: coilInfo.coilBase,
+    label: coilInfo.label,
+    ftNeeded,
+    lbsNeeded: Math.round(lbsNeeded * 100) / 100,
+    ftPerLb: coilInfo.ftPerLb,
+    isCoil: true,
+  };
+}
+
 const CAT_COLOR={"K-Style Gutters":C.accent,"Half Round Gutters":C.purple,"Copper Gutters":"#c97b2e","Downspouts":C.blue,"Elbows":C.teal,"End Caps":C.green,"Corners & Miters":"#e8845a","Outlets & Drops":"#7ab8e8","Hangers & Hardware":"#b8a7e8","Gutter Guards":C.green,"Fasteners & Screws":C.textMuted,"Paint & Sealants":"#f4a8c0","Materials":"#8ac4b8","Accessories":C.textMuted,"Gutter Coil":"#d4c57a","Other":C.textDim};
 
 // ── Seed Data ─────────────────────────────────────────────────────────────────
 // SKUs loaded from skus.js (cached separately for performance)
 const SEED_ITEMS=(window.__GB_SKUS__||[]).map(([sku,name,cat,unit,cost,sup],i)=>({id:`raw${i}`,sku,name,category:cat,unit,qty:0,minQty:0,cost,supplier:sup}));
 
-const SEED_ITEMS=RAW_SKUS.map(([sku,name,cat,unit,cost,sup],i)=>({id:`raw${i}`,sku,name,category:cat,unit,qty:0,minQty:0,cost,supplier:sup}));
 
 // ── UI Primitives ─────────────────────────────────────────────────────────────
 const Badge=({color,children,small})=>(
@@ -946,19 +1017,34 @@ function WorkOrders({items,workOrders,setWorkOrders,geminiKey,skuMappings,notify
   };
   const generatePO=(wo)=>{
     const byS={};
-    wo.lineItems.filter(li=>li.short>0&&li.inventoryItem).forEach(li=>{const s=li.inventoryItem.supplier||"Other";if(!byS[s])byS[s]=[];byS[s].push(li);});
+    wo.lineItems.filter(li=>li.short>0&&li.inventoryItem).forEach(li=>{
+      const coil=getCoilOrder(li.inventoryItem, li.short);
+      if(coil){
+        // K-Style gutter → convert to Spectra coil order
+        if(!byS["Spectra (Coil)"])byS["Spectra (Coil)"]=[];
+        byS["Spectra (Coil)"].push({...li, coil});
+      } else {
+        const s=li.inventoryItem.supplier||"Other";
+        if(!byS[s])byS[s]=[];
+        byS[s].push(li);
+      }
+    });
     const um=wo.lineItems.filter(li=>li.short>0&&!li.inventoryItem);
     if(um.length)byS["Unknown / Check Manually"]=um;
     setPoModal({wo,bySupplier:byS});
   };
   const printPO=(wo,byS)=>{
     const lines=Object.entries(byS).map(([s,its])=>{
-      const rows=its.map(li=>"  "+li.sku+" - "+(li.description||"")+" - Qty: "+li.short+(li.inventoryItem?" @ $"+Number(li.inventoryItem.cost).toFixed(2)+" = $"+(li.short*li.inventoryItem.cost).toFixed(2):" (no price)")).join("\n");
-      return "\n-- "+s.toUpperCase()+" --\n"+rows+"\n  Subtotal: $"+its.reduce((s,li)=>s+(li.inventoryItem?li.short*li.inventoryItem.cost:0),0).toFixed(2);
+      const rows=its.map(li=>{
+        if(li.coil){
+          return "  "+li.coil.spectraSku+" - "+li.inventoryItem.name+" ("+li.coil.label+")\n    "+li.short+" ft ÷ "+li.coil.ftPerLb+" ft/lb = "+li.coil.lbsNeeded+" lbs to order";
+        }
+        return "  "+(li.sku||"?")+" - "+(li.description||li.inventoryItem&&li.inventoryItem.name||"")+" - Qty: "+li.short+(li.inventoryItem?" @ $"+Number(li.inventoryItem.cost).toFixed(2)+" = $"+(li.short*li.inventoryItem.cost).toFixed(2):" (no price)");
+      }).join("\n");
+      return "\n-- "+s.toUpperCase()+" --\n"+rows;
     }).join("\n");
-    const grand=Object.values(byS).flat().reduce((s,li)=>s+(li.inventoryItem?li.short*li.inventoryItem.cost:0),0);
     const win=window.open("","_blank");
-    win.document.write("<pre style='font-family:monospace;padding:32px;font-size:14px;line-height:2'>PURCHASE ORDER - GUTTERBROTHERS\nDate: "+new Date().toLocaleDateString()+"\nJob: "+wo.jobName+(wo.workOrderNumber?" #"+wo.workOrderNumber:"")+lines+"\n\nGRAND TOTAL: $"+grand.toFixed(2)+"</pre>");
+    win.document.write("<pre style='font-family:monospace;padding:32px;font-size:14px;line-height:2'>PURCHASE ORDER - GUTTERBROTHERS\nDate: "+new Date().toLocaleDateString()+"\nJob: "+wo.jobName+(wo.workOrderNumber?" #"+wo.workOrderNumber:"")+lines+"</pre>");
     win.document.close();win.print();
   };
   return(
@@ -1050,11 +1136,11 @@ function WorkOrders({items,workOrders,setWorkOrders,geminiKey,skuMappings,notify
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                 <thead><tr style={{borderBottom:"1px solid "+C.border}}>{["SKU","Item","Qty to Order","Unit Cost","Line Total"].map(h=>(<th key={h} style={{padding:"6px 10px",textAlign:"left",color:C.textMuted,fontSize:10,fontWeight:700,textTransform:"uppercase"}}>{h}</th>))}</tr></thead>
                 <tbody>{its.map((li,i)=>(<tr key={i} style={{borderBottom:"1px solid "+C.border+"22"}}>
-                  <td style={{padding:"7px 10px",fontFamily:"monospace",fontSize:11,color:C.textMuted}}>{li.sku||"?"}</td>
-                  <td style={{padding:"7px 10px"}}>{li.description||li.inventoryItem&&li.inventoryItem.name||"Unknown"}</td>
-                  <td style={{padding:"7px 10px",fontWeight:800,color:C.accent}}>{li.short+" "+(li.unit||"")}</td>
-                  <td style={{padding:"7px 10px",color:C.textMuted}}>{li.inventoryItem?"$"+Number(li.inventoryItem.cost).toFixed(2):"—"}</td>
-                  <td style={{padding:"7px 10px",fontFamily:"monospace"}}>{li.inventoryItem?"$"+(li.short*li.inventoryItem.cost).toFixed(2):"—"}</td>
+                  <td style={{padding:"7px 10px",fontFamily:"monospace",fontSize:11,color:C.textMuted}}>{li.coil?li.coil.spectraSku:li.sku||"?"}</td>
+                  <td style={{padding:"7px 10px"}}>{li.coil?<span>{li.inventoryItem.name}<br/><span style={{fontSize:10,color:C.teal}}>{li.coil.label}</span></span>:li.description||li.inventoryItem&&li.inventoryItem.name||"Unknown"}</td>
+                  <td style={{padding:"7px 10px",fontWeight:800,color:C.accent}}>{li.coil?<span>{li.coil.lbsNeeded+" lbs"}<br/><span style={{fontSize:10,color:C.textMuted}}>({li.short} ft ÷ {li.coil.ftPerLb})</span></span>:li.short+" "+(li.unit||"")}</td>
+                  <td style={{padding:"7px 10px",color:C.textMuted}}>{li.inventoryItem&&!li.coil?"$"+Number(li.inventoryItem.cost).toFixed(2):"—"}</td>
+                  <td style={{padding:"7px 10px",fontFamily:"monospace"}}>{li.inventoryItem&&!li.coil?"$"+(li.short*li.inventoryItem.cost).toFixed(2):"—"}</td>
                 </tr>))}</tbody>
               </table>
             </Card>
