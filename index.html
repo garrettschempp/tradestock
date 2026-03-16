@@ -310,7 +310,7 @@ function Dashboard({items,logs,jobs,pending}){
 }
 
 // ── Inventory ─────────────────────────────────────────────────────────────────
-function Inventory({items,setItems,notify,apiKey}){
+function Inventory({items,setItems,notify,apiKey,skuMappings}){
   const [search,setSearch]=useState("");
   const [cat,setCat]=useState("All");
   const [sup,setSup]=useState("All");
