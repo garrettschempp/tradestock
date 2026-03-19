@@ -163,6 +163,7 @@ function App(){
   const [workOrders,setWorkOrders]=useState(()=>lsGet("gb:workorders")||[]);
   const [geminiKey,setGeminiKey]=useState(()=>localStorage.getItem("gb:geminiKey")||"");
   const [skuMappings,setSkuMappings]=useState(()=>lsGet("gb:skumappings")||[]);
+  const [supplierPrices,setSupplierPrices]=useState(()=>lsGet("gb:supplierprices")||{});
   const [toast,setToast]=useState(null);
 
   useEffect(()=>lsSet("gb:items",items),[items]);
@@ -172,6 +173,7 @@ function App(){
   useEffect(()=>lsSet("gb:workorders",workOrders),[workOrders]);
   useEffect(()=>{if(geminiKey)localStorage.setItem("gb:geminiKey",geminiKey);},[geminiKey]);
   useEffect(()=>lsSet("gb:skumappings",skuMappings),[skuMappings]);
+  useEffect(()=>lsSet("gb:supplierprices",supplierPrices),[supplierPrices]);
 
   const notify=(msg,color=C.green)=>{setToast({msg,color});setTimeout(()=>setToast(null),3500);};
 
@@ -215,13 +217,13 @@ function App(){
 
       <div style={{padding:"20px",maxWidth:1400,margin:"0 auto"}}>
         {tab==="dashboard"&&<Dashboard items={items} logs={logs} jobs={jobs} pending={pending}/>}
-        {tab==="inventory"&&<Inventory items={items} setItems={setItems} notify={notify} apiKey={geminiKey} skuMappings={skuMappings}/>}
+        {tab==="inventory"&&<Inventory items={items} setItems={setItems} notify={notify} apiKey={geminiKey} skuMappings={skuMappings} supplierPrices={supplierPrices}/>}
         {tab==="usage"&&<UsageLog items={items} setItems={setItems} jobs={jobs} logs={logs} setLogs={setLogs} notify={notify}/>}
         {tab==="pending"&&<PendingReview pending={pending} setPending={setPending} items={items} setItems={setItems} logs={logs} setLogs={setLogs} jobs={jobs} notify={notify}/>}
         {tab==="history"&&<History logs={logs} jobs={jobs}/>}
         {tab==="jobs"&&<Jobs jobs={jobs} setJobs={setJobs} notify={notify}/>}
         {tab==="workorders"&&<WorkOrders items={items} workOrders={workOrders} setWorkOrders={setWorkOrders} geminiKey={geminiKey} skuMappings={skuMappings} notify={notify} setTab={setTab}/>}
-        {tab==="settings"&&<Settings geminiKey={geminiKey} setGeminiKey={setGeminiKey} skuMappings={skuMappings} setSkuMappings={setSkuMappings} notify={notify}/>}
+        {tab==="settings"&&<Settings geminiKey={geminiKey} setGeminiKey={setGeminiKey} skuMappings={skuMappings} setSkuMappings={setSkuMappings} supplierPrices={supplierPrices} setSupplierPrices={setSupplierPrices} notify={notify}/>}
       </div>
     </div>
   );
@@ -310,7 +312,7 @@ function Dashboard({items,logs,jobs,pending}){
 }
 
 // ── Inventory ─────────────────────────────────────────────────────────────────
-function Inventory({items,setItems,notify,apiKey,skuMappings}){
+function Inventory({items,setItems,notify,apiKey,skuMappings,supplierPrices}){
   const [search,setSearch]=useState("");
   const [cat,setCat]=useState("All");
   const [sup,setSup]=useState("All");
@@ -321,7 +323,8 @@ function Inventory({items,setItems,notify,apiKey,skuMappings}){
   const [page,setPage]=useState(1);
   const PS=50;
 
-  const emptyForm={sku:"",name:"",category:"K-Style Gutters",unit:"each",qty:"",minQty:"",cost:"",supplier:""};
+  const CAT_UNIT={"K-Style Gutters":"ft","Half Round Gutters":"ft","Gutter Coil":"lb","Downspouts":"ft","Gutter Guards":"ft","End Caps":"each","Elbows":"each","Corners & Miters":"each","Outlets & Drops":"each","Hangers & Hardware":"each","Accessories":"each","Materials":"each","Other":"each","Services":"each"};
+  const emptyForm={sku:"",name:"",category:"K-Style Gutters",unit:"ft",qty:"",minQty:"",cost:"",supplier:""};
   const [form,setForm]=useState(emptyForm);
 
   const visible=items.filter(i=>{
@@ -455,7 +458,7 @@ function Inventory({items,setItems,notify,apiKey,skuMappings}){
         </div>
       )}
 
-      {receiveModal&&(<Modal title="Receive Stock" onClose={()=>setReceiveModal(false)} wide><ReceiveStock items={items} setItems={setItems} notify={notify} onClose={()=>setReceiveModal(false)} apiKey={apiKey} skuMappings={skuMappings}/></Modal>)}
+      {receiveModal&&(<Modal title="Receive Stock" onClose={()=>setReceiveModal(false)} wide><ReceiveStock items={items} setItems={setItems} notify={notify} onClose={()=>setReceiveModal(false)} apiKey={apiKey} skuMappings={skuMappings} supplierPrices={supplierPrices}/></Modal>)}
       {adjModal&&(
         <Modal title={`Adjust: ${adjModal.name}`} onClose={()=>setAdjModal(null)}>
           <AdjustModal item={adjModal} onSave={(id,n)=>{setItems(p=>p.map(i=>i.id===id?{...i,qty:n}:i));notify("Quantity updated!");setAdjModal(null);}}/>
@@ -471,7 +474,7 @@ function Inventory({items,setItems,notify,apiKey,skuMappings}){
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
               <div><label style={{fontSize:12,color:C.textMuted,display:"block",marginBottom:4}}>Category</label>
-                <Sel value={form.category||CATEGORIES[0]} onChange={e=>setForm(f=>({...f,category:e.target.value}))}>
+                <Sel value={form.category||CATEGORIES[0]} onChange={e=>setForm(f=>({...f,category:e.target.value,unit:CAT_UNIT[e.target.value]||"each"}))}>
                   {CATEGORIES.map(c=><option key={c}>{c}</option>)}
                 </Sel>
               </div>
@@ -761,7 +764,7 @@ function Jobs({jobs,setJobs,notify}){
 
 
 // ReceiveStock
-function ReceiveStock({items,setItems,notify,onClose,apiKey,skuMappings}){
+function ReceiveStock({items,setItems,notify,onClose,apiKey,skuMappings,supplierPrices}){
   const [mode,setMode]=useState("manual"); // "manual" | "pdf"
   const [loading,setLoading]=useState(false);
   const [rows,setRows]=useState([]); // [{itemId,sku,name,qty,adding}]
@@ -806,7 +809,7 @@ function ReceiveStock({items,setItems,notify,onClose,apiKey,skuMappings}){
     setLoading(true);notify("Reading invoice with AI...",C.blue);
     try{
       const b64=await toB64(file);
-      const prompt="This is a supplier invoice for gutter installation materials. Extract every line item with a SKU/product code and quantity received. Respond with ONLY valid JSON, no markdown: {\"supplier\":\"supplier name\",\"invoiceNumber\":\"invoice# or null\",\"date\":\"date or null\",\"lineItems\":[{\"sku\":\"CODE\",\"description\":\"item description\",\"qty\":10,\"unit\":\"each\"}]}";
+      const prompt="This is a supplier invoice for gutter installation materials. Extract every line item. Respond with ONLY valid JSON, no markdown: {\"supplier\":\"supplier name\",\"invoiceNumber\":\"invoice# or null\",\"date\":\"date or null\",\"lineItems\":[{\"sku\":\"CODE\",\"description\":\"item description\",\"qty\":10,\"unitCost\":12.50,\"unit\":\"each\"}]}. Include unitCost (price per unit) if shown on invoice, otherwise null.";
       const resp=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-opus-4-5",max_tokens:2048,messages:[{role:"user",content:[{type:"document",source:{type:"base64",media_type:"application/pdf",data:b64}},{type:"text",text:prompt}]}]})});
       const data=await resp.json();
       if(data.error){notify("API error: "+data.error.message,C.red);setLoading(false);return;}
@@ -832,7 +835,10 @@ function ReceiveStock({items,setItems,notify,onClose,apiKey,skuMappings}){
     if(!toApply.length){notify("No matched items selected.",C.red);return;}
     setItems(prev=>prev.map(item=>{
       const li=toApply.find(l=>l.inventoryItem&&l.inventoryItem.id===item.id);
-      return li?{...item,qty:item.qty+li.qty}:item;
+      if(!li)return item;
+      const updates={qty:item.qty+li.qty};
+      if(li.unitCost!=null)updates.cost=li.unitCost;
+      return{...item,...updates};
     }));
     notify("✓ Stock updated — "+toApply.length+" item"+(toApply.length!==1?"s":"")+" received!");
     onClose();
@@ -1159,13 +1165,66 @@ function WorkOrders({items,workOrders,setWorkOrders,geminiKey,skuMappings,notify
 }
 
 // Settings
-function Settings({geminiKey,setGeminiKey,skuMappings,setSkuMappings,notify}){
+function Settings({geminiKey,setGeminiKey,skuMappings,setSkuMappings,supplierPrices,setSupplierPrices,notify}){
   const [draft,setDraft]=useState(geminiKey);
   const [show,setShow]=useState(false);
   const emptyMap={supplierSku:"",supplierName:"",mySku:"",multiplier:"1",note:""};
   const [mapForm,setMapForm]=useState(emptyMap);
   const [editingMap,setEditingMap]=useState(null); // id or null
   const [showMapForm,setShowMapForm]=useState(false);
+  const [priceLoading,setPriceLoading]=useState(false);
+  const mapImportRef=useRef();
+  const priceSheetRef=useRef();
+
+  // Import mapping spreadsheet
+  const importMappings=async(e)=>{
+    const file=e.target.files[0];if(!file)return;
+    try{
+      const ab=await file.arrayBuffer();
+      const wb=XLSX.read(ab);
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(ws,{defval:""});
+      const imported=[];
+      for(const r of rows){
+        const spectraSku=(r["Spectra SKU"]||r["spectra_sku"]||r["SpectraSKU"]||"").toString().trim();
+        const sbSku=(r["Your SB SKU"]||r["SB SKU"]||r["sb_sku"]||r["mySku"]||"").toString().trim();
+        const fpl=(r["ft/lb (coil only)"]||r["ft_per_lb"]||r["ftPerLb"]||"").toString().trim();
+        const spectraName=(r["Spectra Name"]||r["spectra_name"]||"").toString().trim();
+        if(!spectraSku||!sbSku)continue;
+        imported.push({id:"m"+Date.now()+Math.random(),supplierSku:spectraSku,supplierName:"Spectra",mySku:sbSku,multiplier:fpl&&Number(fpl)>0?Number(fpl):1,note:fpl&&Number(fpl)>0?"1 lb = "+fpl+" ft":""});
+      }
+      if(!imported.length){notify("No valid mappings found in file.",C.red);return;}
+      setSkuMappings(p=>{
+        const existing=new Set(p.map(m=>m.supplierSku.toLowerCase()));
+        const newOnes=imported.filter(m=>!existing.has(m.supplierSku.toLowerCase()));
+        return[...p,...newOnes];
+      });
+      notify("✓ Imported "+imported.length+" mappings!");
+    }catch(err){notify("Import error: "+err.message,C.red);}
+    if(e.target)e.target.value="";
+  };
+
+  // Upload price sheet PDF → AI extracts prices
+  const uploadPriceSheet=async(e)=>{
+    const file=e.target.files[0];if(!file)return;
+    if(!geminiKey){notify("Add your API key in Settings first.",C.red);return;}
+    setPriceLoading(true);notify("Reading price sheet with AI...",C.blue);
+    try{
+      const r=new FileReader();
+      const b64=await new Promise((res,rej)=>{r.onload=()=>res(r.result.split(",")[1]);r.onerror=rej;r.readAsDataURL(file);});
+      const prompt="This is a supplier price sheet for gutter materials. Extract every product with its SKU and unit price. Respond with ONLY valid JSON, no markdown: {\"prices\":[{\"sku\":\"CODE\",\"description\":\"item name\",\"unitPrice\":12.50}]}. Use the exact SKU codes shown.";
+      const resp=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":geminiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-opus-4-5",max_tokens:4096,messages:[{role:"user",content:[{type:"document",source:{type:"base64",media_type:"application/pdf",data:b64}},{type:"text",text:prompt}]}]})});
+      const data=await resp.json();
+      if(data.error){notify("API error: "+data.error.message,C.red);setPriceLoading(false);return;}
+      let raw=((data.content||[])[0]?.text||"{}").replace(/```json|```/g,"").trim();
+      const parsed=JSON.parse(raw);
+      const priceMap={};
+      (parsed.prices||[]).forEach(p=>{if(p.sku&&p.unitPrice!=null)priceMap[p.sku.toUpperCase()]=Number(p.unitPrice);});
+      setSupplierPrices(prev=>({...prev,...priceMap}));
+      notify("✓ "+Object.keys(priceMap).length+" prices imported from price sheet!");
+    }catch(err){notify("Error: "+err.message,C.red);}
+    setPriceLoading(false);if(e.target)e.target.value="";
+  };
 
   const saveMapping=()=>{
     if(!mapForm.supplierSku.trim()||!mapForm.mySku.trim()){notify("Supplier SKU and Your SKU are required.",C.red);return;}
@@ -1277,6 +1336,35 @@ function Settings({geminiKey,setGeminiKey,skuMappings,setSkuMappings,notify}){
             </table>
           </div>
         }
+      </Card>
+
+      <Card style={{marginBottom:16}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <div>
+            <div style={{fontWeight:800,fontSize:15}}>Import SKU Mapping Spreadsheet</div>
+            <div style={{fontSize:12,color:C.textMuted,marginTop:2}}>Upload the Spectra_SKU_Mapping Excel file to auto-populate mappings. Existing mappings won't be overwritten.</div>
+          </div>
+        </div>
+        <input ref={mapImportRef} type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={importMappings}/>
+        <div style={{display:"flex",gap:10,alignItems:"center"}}>
+          <Btn onClick={()=>mapImportRef.current.click()}>📥 Import Mapping Excel</Btn>
+          <span style={{fontSize:12,color:C.textMuted}}>{skuMappings.length} mappings loaded</span>
+        </div>
+      </Card>
+
+      <Card style={{marginBottom:16}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <div>
+            <div style={{fontWeight:800,fontSize:15}}>Supplier Price Sheet</div>
+            <div style={{fontSize:12,color:C.textMuted,marginTop:2}}>Upload a Spectra or US Aluminum price sheet PDF. AI extracts prices and auto-fills costs when you receive invoices.</div>
+          </div>
+        </div>
+        <input ref={priceSheetRef} type="file" accept=".pdf" style={{display:"none"}} onChange={uploadPriceSheet}/>
+        <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+          <Btn onClick={()=>priceSheetRef.current.click()} disabled={priceLoading}>{priceLoading?"Reading...":"📄 Upload Price Sheet PDF"}</Btn>
+          <span style={{fontSize:12,color:C.textMuted}}>{Object.keys(supplierPrices||{}).length} prices stored</span>
+          {Object.keys(supplierPrices||{}).length>0&&<Btn variant="danger" small onClick={()=>{setSupplierPrices({});notify("Prices cleared.",C.red);}}>Clear Prices</Btn>}
+        </div>
       </Card>
 
       <Card style={{marginBottom:16}}>
