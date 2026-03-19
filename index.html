@@ -50,6 +50,8 @@ const COIL_MAP = {
 };
 
 // Spectra color code lookup by color name keywords
+const SPECTRA_BASE_PRICES={"027(11&11875)": 3.75, "032(11&11875)": 3.75, "02715": 3.75, "03215": 3.75, "02711DCP": 4.49, "02715DCP": 4.49, "02717875": 3.85, "03217875": 3.85, "280WHITE": 118.64, "189PVC": 130.07, "3DP10": 1.12, "3DP8": 1.12, "4DP10": 1.445, "4DP8": 1.445, "4DP10DCP": 27.96, "4RDP10": 26.22, "4RDP10DCP": 46.49, "5DP10": 33.04, "3AEL": 1.18, "3BEL": 1.18, "3AOFFSET": 1.18, "3BOFFSET": 1.18, "3EOS": 6.7, "4AEL": 1.65, "4BEL": 1.65, "4AOFFSET": 1.65, "4BOFFSET": 1.65, "4EOS": 8.55, "4AELDCP": 2.62, "4AOS2DCP": 2.62, "4AOS4DCP": 2.62, "4REL": 4.63, "4ROS": 4.61, "4RELDCP": 7.0, "4ROS2DCP": 7.0, "4ROS4DCP": 7.0, "5AEL": 8.66, "5BEL": 8.66, "5AOFFSET": 8.66, "5EN": 0.49, "5EN(L,R)": 0.49, "5EN(L,R)DCP": 0.84, "6EN": 0.87, "6EN(L,R)": 0.87, "6EN(L,R)DCP": 1.74, "6HREN": 7.16, "5(OTM,INM)": 4.65, "5(OTM": 4.65, "5(OSM,ISM)": 2.23, "5(OSM": 2.23, "5(OBS,IBS)": 3.72, "5(OBS": 3.72, "6(OTM,INM)": 13.33, "6(OTM": 13.33, "6(OSM,ISM)": 3.72, "6(OSM": 3.72, "6(OBS,IBS)": 6.56, "6(OBS": 6.56, "6HR(INM,OTM)": 87.98, "6HR(INM": 87.98, "6HR(OSM,ISM)": 6.55, "6HR(OSM": 6.55, "3ROT": 0.69, "4ROT": 0.99, "4OVOT": 0.96, "4OVOTB": 0.96, "4OVOTF": 0.96, "4HROTW": 3.9, "338R": 1.96, "5WOTAL": 6.66, "5HNS": 0.44, "5UHNC": 0.32, "5HFH": 0.6, "5HFEH": 0.71, "5WSH8W": 5.64, "6HNS": 0.44, "6SSH": 0.68, "6HFEH": 0.76, "6UHNC": 0.5, "6HRHHAL": 1.47, "6HRHHALWS": 1.47, "6COMBOBZ": 20.83, "6COMBORB": 20.83, "6CIRCLEBZ": 7.78, "6CIRCLERB": 7.78, "6CIRCLEW": 7.78, "30SHANKBZ": 7.71, "30SHANKW": 7.71, "TS": 0.21, "TUP": 8.4, "TUPDCP": 11.56, "G2320AL": 6.16, "G2320W": 6.16, "5EGBK": 7.96, "5EGW": 7.69, "6EGBK": 8.84, "6EGW": 8.84, "GS441FM": 5.0, "GS442FM": 5.74, "GS501LC": 3.88, "GS502LC": 4.26, "LFB5SS": 9.83, "LFB6SS": 13.18, "RS4BK": 7.4, "812": 2.33, "10112H": 63.44, "10112HW": 63.44, "DPB": 0.57, "DPB3": 0.57, "DPB4": 0.57, "3DPCLIP": 0.57, "4DPCLIP": 0.57, "4CBOX": 135.93, "4ADA": 5.1, "4ADAW": 5.1, "DX8X16BK": 1.8, "DX24X24BK": 6.0, "DX36RL5BK": 15.5, "DX24RL5BK": 13.25, "DX24RL25MF": 37.5, "DX36RL25MF": 45.0, "FLASHGA10GALV": 4.2, "FLASHGA10BK": 4.4, "FLASHGA4GALV": 1.92, "FLASHGA4BK": 2.0, "7EXPSTRIPBK": 2.25, "WEDGEW": 0.87, "WEDGERB": 0.87, "6WEDGEW": 1.18, "6WEDGERB": 1.18, "TWEDGE": 0.87, "TWEDGE-J": 2.86, "TWEDGE-JM": 0.94};
+
 const SPECTRA_COLORS = {
   '80 white':      '8W', 'high gloss white': '8W', 'high gloss': '8W',
   '30 white':      '3W', 'low gloss white':  '3W', 'white': '3W',
@@ -75,6 +77,9 @@ const SPECTRA_COLORS = {
   'copper':        'CP',
   'galvalume':     'GALVALUME',
 };
+
+const SPECTRA_COLOR_SUFFIXES=['GALVALUME','DCP','3W','8W','LN','AL','CR','WW','CL','TT','AI','CB','MB','RB','GY','CG','DG','TG','TB','SR','FG','BZ','CP','BK','BB','FM','PC','DS','EG'];
+const getBaseSku=sku=>{const u=sku.toUpperCase();for(const c of SPECTRA_COLOR_SUFFIXES){if(u.endsWith(c))return sku.slice(0,-c.length);}return sku;};
 
 function getSpectraColorCode(itemName) {
   if (!itemName) return null;
@@ -163,7 +168,7 @@ function App(){
   const [workOrders,setWorkOrders]=useState(()=>lsGet("gb:workorders")||[]);
   const [geminiKey,setGeminiKey]=useState(()=>localStorage.getItem("gb:geminiKey")||"");
   const [skuMappings,setSkuMappings]=useState(()=>lsGet("gb:skumappings")||[]);
-  const [supplierPrices,setSupplierPrices]=useState(()=>lsGet("gb:supplierprices")||{});
+  const [supplierPrices,setSupplierPrices]=useState(()=>({...SPECTRA_BASE_PRICES,...(lsGet("gb:supplierprices")||{})}));
   const [toast,setToast]=useState(null);
 
   useEffect(()=>lsSet("gb:items",items),[items]);
@@ -834,7 +839,10 @@ function ReceiveStock({items,setItems,notify,onClose,apiKey,skuMappings,supplier
         const inv=resolved?resolved.item:null;
         const multiplier=resolved?resolved.multiplier:1;
         const qty=Math.round((Number(li.qty)||0)*multiplier);
-        return{...li,inventoryItem:inv||null,matched:!!inv,apply:!!inv,qty,supplierQty:Number(li.qty)||0,multiplier};
+        // Cost: invoice unitCost first, then stored price by full SKU, then by base SKU
+        const skuUp=(li.sku||"").toUpperCase();
+        const unitCost=li.unitCost!=null?Number(li.unitCost):((supplierPrices||{})[skuUp]||(supplierPrices||{})[getBaseSku(li.sku||"").toUpperCase()]||null);
+        return{...li,inventoryItem:inv||null,matched:!!inv,apply:!!inv,qty,supplierQty:Number(li.qty)||0,multiplier,unitCost};
       });
       setPdfLines({...parsed,lineItems:lines});
       notify("Invoice read — "+lines.length+" items found");
@@ -1245,7 +1253,7 @@ function Settings({geminiKey,setGeminiKey,skuMappings,setSkuMappings,supplierPri
       let raw=((data.content||[])[0]?.text||"{}").replace(/```json|```/g,"").trim();
       const parsed=JSON.parse(raw);
       const priceMap={};
-      (parsed.prices||[]).forEach(p=>{if(p.sku&&p.unitPrice!=null)priceMap[p.sku.toUpperCase()]=Number(p.unitPrice);});
+      (parsed.prices||[]).forEach(p=>{if(p.sku&&p.unitPrice!=null){const base=getBaseSku(p.sku).toUpperCase();priceMap[base]=Number(p.unitPrice);}});
       setSupplierPrices(prev=>({...prev,...priceMap}));
       notify("✓ "+Object.keys(priceMap).length+" prices imported from price sheet!");
     }catch(err){notify("Error: "+err.message,C.red);}
