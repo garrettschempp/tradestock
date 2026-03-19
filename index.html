@@ -46,7 +46,7 @@ const SUP_COLOR={"Spectra":C.blue,"US Aluminum":C.accent,"OGG":C.green,"Other":C
 const COIL_MAP = {
   '5': { coilBase: '027(11&11875)', ftPerLb: 2.65,  label: '5" → 027X 11-3/4"' },
   '6': { coilBase: '02715',         ftPerLb: 2.07,  label: '6" → 027X 15"' },
-  '7': { coilBase: '03217875',      ftPerLb: 1.462, label: '7" → 032X 17-7/8"' },
+  '7': { coilBase: '02717875',      ftPerLb: 1.462, label: '7" → 027X 17-7/8"' },
 };
 
 // Spectra color code lookup by color name keywords
@@ -776,7 +776,20 @@ function ReceiveStock({items,setItems,notify,onClose,apiKey,skuMappings,supplier
     const direct=items.find(i=>i.sku&&i.sku.toLowerCase()===sku.toLowerCase());
     if(direct)return{item:direct,multiplier:1};
     const map=(skuMappings||[]).find(m=>m.supplierSku.toLowerCase()===sku.toLowerCase());
-    if(map){const item=items.find(i=>i.sku&&i.sku.toLowerCase()===map.mySku.toLowerCase());if(item)return{item,multiplier:Number(map.multiplier)||1};}
+    if(map){
+      const item=items.find(i=>i.sku&&i.sku.toLowerCase()===map.mySku.toLowerCase());
+      if(item){
+        // For coil SKUs always use COIL_MAP ft/lb, not spreadsheet multiplier
+        const su=sku.toUpperCase();
+        let multiplier=Number(map.multiplier)||1;
+        if(su.startsWith('027')||su.startsWith('032')){
+          if(su.includes('11&11875')||su.includes('11&118'))multiplier=COIL_MAP['5'].ftPerLb;
+          else if(su.includes('17875')||su.includes('178'))multiplier=COIL_MAP['7'].ftPerLb;
+          else if(su.includes('15'))multiplier=COIL_MAP['6'].ftPerLb;
+        }
+        return{item,multiplier};
+      }
+    }
     return null;
   };
   const filtered=search?items.filter(i=>(i.name+i.sku).toLowerCase().includes(search.toLowerCase())):items;
@@ -959,7 +972,20 @@ function WorkOrders({items,workOrders,setWorkOrders,geminiKey,skuMappings,notify
     const direct=items.find(i=>i.sku&&i.sku.toLowerCase()===sku.toLowerCase());
     if(direct)return{item:direct,multiplier:1};
     const map=(skuMappings||[]).find(m=>m.supplierSku.toLowerCase()===sku.toLowerCase());
-    if(map){const item=items.find(i=>i.sku&&i.sku.toLowerCase()===map.mySku.toLowerCase());if(item)return{item,multiplier:Number(map.multiplier)||1};}
+    if(map){
+      const item=items.find(i=>i.sku&&i.sku.toLowerCase()===map.mySku.toLowerCase());
+      if(item){
+        // For coil SKUs always use COIL_MAP ft/lb, not spreadsheet multiplier
+        const su=sku.toUpperCase();
+        let multiplier=Number(map.multiplier)||1;
+        if(su.startsWith('027')||su.startsWith('032')){
+          if(su.includes('11&11875')||su.includes('11&118'))multiplier=COIL_MAP['5'].ftPerLb;
+          else if(su.includes('17875')||su.includes('178'))multiplier=COIL_MAP['7'].ftPerLb;
+          else if(su.includes('15'))multiplier=COIL_MAP['6'].ftPerLb;
+        }
+        return{item,multiplier};
+      }
+    }
     return null;
   };
   const toB64=(file)=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(",")[1]);r.onerror=rej;r.readAsDataURL(file);});
