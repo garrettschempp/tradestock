@@ -104,13 +104,16 @@ function getCoilOrder(item, ftNeeded) {
   // Get color code
   const colorCode = getSpectraColorCode(item.name);
   const spectraSku = colorCode ? coilInfo.coilBase + colorCode : coilInfo.coilBase + '__';
-  const lbsNeeded = ftNeeded / coilInfo.ftPerLb;
+  // Round footage up to nearest 10 before converting to lbs
+  const ftRounded = Math.ceil(ftNeeded / 10) * 10;
+  const lbsNeeded = ftRounded / coilInfo.ftPerLb;
   return {
     spectraSku,
     colorCode,
     coilBase: coilInfo.coilBase,
     label: coilInfo.label,
     ftNeeded,
+    ftRounded,
     lbsNeeded: Math.round(lbsNeeded * 100) / 100,
     ftPerLb: coilInfo.ftPerLb,
     isCoil: true,
@@ -1055,15 +1058,15 @@ function WorkOrders({items,workOrders,setWorkOrders,geminiKey,skuMappings,notify
     }catch(err){notify("Error: "+err.message,C.red);}
     setLoading(false);if(e.target)e.target.value="";
   };
-  const generatePO=(wo)=>{
+  // Build PO data grouped by supplier
+  const buildPOData=(wo)=>{
     const byS={};
     wo.lineItems.filter(li=>li.short>0&&li.inventoryItem).forEach(li=>{
-      const coil=getCoilOrder(li.inventoryItem, li.short);
+      const coil=getCoilOrder(li.inventoryItem,li.short);
       if(coil){
-        // K-Style gutter → convert to Spectra coil order
         if(!byS["Spectra (Coil)"])byS["Spectra (Coil)"]=[];
-        byS["Spectra (Coil)"].push({...li, coil});
-      } else {
+        byS["Spectra (Coil)"].push({...li,coil});
+      }else{
         const s=li.inventoryItem.supplier||"Other";
         if(!byS[s])byS[s]=[];
         byS[s].push(li);
@@ -1071,15 +1074,86 @@ function WorkOrders({items,workOrders,setWorkOrders,geminiKey,skuMappings,notify
     });
     const um=wo.lineItems.filter(li=>li.short>0&&!li.inventoryItem);
     if(um.length)byS["Unknown / Check Manually"]=um;
+    return byS;
+  };
+
+  const generatePO=(wo)=>{
+    const byS=buildPOData(wo);
     setPoModal({wo,bySupplier:byS});
   };
+
+  // Export PO to Excel
+  const exportPO=(wo,byS)=>{
+    const wb=XLSX.utils.book_new();
+    Object.entries(byS).forEach(([supplier,items])=>{
+      const rows=[];
+      // Header info
+      rows.push(["PURCHASE ORDER - GUTTERBROTHERS"]);
+      rows.push(["Date:",new Date().toLocaleDateString()]);
+      rows.push(["Job:",wo.jobName+(wo.workOrderNumber?" #"+wo.workOrderNumber:"")]);
+      rows.push(["Supplier:",supplier]);
+      rows.push([]);
+      // Column headers
+      if(supplier==="Spectra (Coil)"){
+        rows.push(["Spectra SKU","Description","Gutter Size","Ft Needed","Ft/Lb","Lbs to Order","Unit Price","Total Cost"]);
+        items.forEach(li=>{
+          const c=li.coil;
+          const unitPrice=(supplierPrices||{})[c.coilBase.toUpperCase()]||(supplierPrices||{})[getBaseSku(c.coilBase).toUpperCase()]||"";
+          const total=unitPrice?Number((c.lbsNeeded*unitPrice).toFixed(2)):"";
+          const ftDisp=c.ftRounded!==li.short?c.ftRounded+" (↑ from "+li.short+")":c.ftRounded;rows.push([c.spectraSku,li.inventoryItem.name,c.label,ftDisp,c.ftPerLb,Number(c.lbsNeeded.toFixed(2)),unitPrice,total]);
+        });
+      }else{
+        rows.push(["Spectra SKU","SB SKU","Description","Qty Needed","Unit","Unit Price","Total Cost"]);
+        items.forEach(li=>{
+          // Reverse lookup: find Spectra SKU from skuMappings
+          const mapping=(skuMappings||[]).find(m=>m.mySku.toLowerCase()===(li.sku||"").toLowerCase());
+          const spectraSku=mapping?mapping.supplierSku:"";
+          // Round downspouts up to nearest 10 ft
+          const isDownspout=li.inventoryItem&&(li.inventoryItem.category==="Downspouts"||li.inventoryItem.category==="Gutter Guards");
+          const orderQty=isDownspout?Math.ceil(li.short/10)*10:li.short;
+          const unitPrice=li.inventoryItem?Number(li.inventoryItem.cost)||"":"";
+          const total=unitPrice&&orderQty?Number((orderQty*unitPrice).toFixed(2)):"";
+          const name=li.description||li.inventoryItem&&li.inventoryItem.name||"";
+          const unit=li.inventoryItem?li.inventoryItem.unit:"each";
+          const qtyLabel=isDownspout?orderQty+" ft (rounded up from "+li.short+")":orderQty;
+          rows.push([spectraSku,li.sku||"",name,qtyLabel,unit,unitPrice,total]);
+        });
+      }
+      // Total row
+      rows.push([]);
+      const totalRow=["","","","","","","TOTAL:"];
+      let grandTotal=0;
+      rows.forEach(r=>{if(r.length>=8&&typeof r[7]==="number")grandTotal+=r[7];else if(r.length>=7&&typeof r[6]==="number"&&r[5]==="TOTAL:"){}});
+      // Recalculate total
+      grandTotal=0;
+      rows.forEach(r=>{
+        const lastNum=r[r.length-1];
+        if(typeof lastNum==="number"&&r.length>3)grandTotal+=lastNum;
+      });
+      totalRow.push(Number(grandTotal.toFixed(2)));
+      rows.push(totalRow);
+
+      const sheetName=supplier.replace(/[\/:*?[\]]/g,"").substring(0,31);
+      const ws=XLSX.utils.aoa_to_sheet(rows);
+      // Column widths
+      ws["!cols"]=[{wch:22},{wch:22},{wch:35},{wch:12},{wch:8},{wch:12},{wch:12},{wch:12}];
+      XLSX.utils.book_append_sheet(wb,ws,sheetName);
+    });
+    XLSX.writeFile(wb,"PO-"+wo.jobName.replace(/\s+/g,"-")+"-"+new Date().toISOString().slice(0,10)+".xlsx");
+  };
+
   const printPO=(wo,byS)=>{
     const lines=Object.entries(byS).map(([s,its])=>{
       const rows=its.map(li=>{
         if(li.coil){
-          return "  "+li.coil.spectraSku+" - "+li.inventoryItem.name+" ("+li.coil.label+")\n    "+li.short+" ft ÷ "+li.coil.ftPerLb+" ft/lb = "+li.coil.lbsNeeded+" lbs to order";
+          const ftDisp=li.coil.ftRounded!==li.short?li.coil.ftRounded+" ft (↑ from "+li.short+")":li.short+" ft";return "  "+li.coil.spectraSku+" - "+li.inventoryItem.name+" ("+li.coil.label+")\n    "+ftDisp+" ÷ "+li.coil.ftPerLb+" ft/lb = "+li.coil.lbsNeeded+" lbs to order";
         }
-        return "  "+(li.sku||"?")+" - "+(li.description||li.inventoryItem&&li.inventoryItem.name||"")+" - Qty: "+li.short+(li.inventoryItem?" @ $"+Number(li.inventoryItem.cost).toFixed(2)+" = $"+(li.short*li.inventoryItem.cost).toFixed(2):" (no price)");
+        const mapping=(skuMappings||[]).find(m=>m.mySku.toLowerCase()===(li.sku||"").toLowerCase());
+        const spectraSku=mapping?("[Spectra: "+mapping.supplierSku+"] "):"";
+        const isDS=li.inventoryItem&&(li.inventoryItem.category==="Downspouts"||li.inventoryItem.category==="Gutter Guards");
+        const oQty=isDS?Math.ceil(li.short/10)*10:li.short;
+        const qtyStr=isDS?oQty+" ft (rounded up from "+li.short+")":oQty;
+        return "  "+spectraSku+(li.sku||"?")+" - "+(li.description||li.inventoryItem&&li.inventoryItem.name||"")+" - Qty: "+qtyStr+(li.inventoryItem?" @ $"+Number(li.inventoryItem.cost).toFixed(2)+" = $"+(oQty*li.inventoryItem.cost).toFixed(2):" (no price)");
       }).join("\n");
       return "\n-- "+s.toUpperCase()+" --\n"+rows;
     }).join("\n");
@@ -1087,6 +1161,7 @@ function WorkOrders({items,workOrders,setWorkOrders,geminiKey,skuMappings,notify
     win.document.write("<pre style='font-family:monospace;padding:32px;font-size:14px;line-height:2'>PURCHASE ORDER - GUTTERBROTHERS\nDate: "+new Date().toLocaleDateString()+"\nJob: "+wo.jobName+(wo.workOrderNumber?" #"+wo.workOrderNumber:"")+lines+"</pre>");
     win.document.close();win.print();
   };
+
   return(
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6,flexWrap:"wrap",gap:12}}>
@@ -1178,18 +1253,19 @@ function WorkOrders({items,workOrders,setWorkOrders,geminiKey,skuMappings,notify
                 <tbody>{its.map((li,i)=>(<tr key={i} style={{borderBottom:"1px solid "+C.border+"22"}}>
                   <td style={{padding:"7px 10px",fontFamily:"monospace",fontSize:11,color:C.textMuted}}>{li.coil?li.coil.spectraSku:li.sku||"?"}</td>
                   <td style={{padding:"7px 10px"}}>{li.coil?<span>{li.inventoryItem.name}<br/><span style={{fontSize:10,color:C.teal}}>{li.coil.label}</span></span>:li.description||li.inventoryItem&&li.inventoryItem.name||"Unknown"}</td>
-                  <td style={{padding:"7px 10px",fontWeight:800,color:C.accent}}>{li.coil?<span>{li.coil.lbsNeeded+" lbs"}<br/><span style={{fontSize:10,color:C.textMuted}}>({li.short} ft ÷ {li.coil.ftPerLb})</span></span>:li.short+" "+(li.unit||"")}</td>
+                  <td style={{padding:"7px 10px",fontWeight:800,color:C.accent}}>{li.coil?<span>{li.coil.lbsNeeded+" lbs"}<br/><span style={{fontSize:10,color:C.textMuted}}>({li.coil.ftRounded} ft ÷ {li.coil.ftPerLb}{li.coil.ftRounded!==li.short?" ↑ from "+li.short+" ft":""})</span></span>:(()=>{const isDS=li.inventoryItem&&(li.inventoryItem.category==="Downspouts"||li.inventoryItem.category==="Gutter Guards");const oQ=isDS?Math.ceil(li.short/10)*10:li.short;return isDS?<span>{oQ+" ft"}<br/><span style={{fontSize:10,color:C.textMuted}}>(rounded up from {li.short})</span></span>:oQ+" "+(li.unit||"");})()}</td>
                   <td style={{padding:"7px 10px",color:C.textMuted}}>{li.inventoryItem&&!li.coil?"$"+Number(li.inventoryItem.cost).toFixed(2):"—"}</td>
-                  <td style={{padding:"7px 10px",fontFamily:"monospace"}}>{li.inventoryItem&&!li.coil?"$"+(li.short*li.inventoryItem.cost).toFixed(2):"—"}</td>
+                  <td style={{padding:"7px 10px",fontFamily:"monospace"}}>{li.inventoryItem&&!li.coil?(()=>{const isDS=li.inventoryItem.category==="Downspouts";const oQ=isDS?Math.ceil(li.short/10)*10:li.short;return "$"+(oQ*li.inventoryItem.cost).toFixed(2);})():"—"}</td>
                 </tr>))}</tbody>
               </table>
             </Card>
           ))}
           <div style={{borderTop:"1px solid "+C.border,paddingTop:16,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
             <div style={{fontWeight:800,fontSize:16}}>Grand Total: <span style={{color:C.accent}}>{"$"+Object.values(poModal.bySupplier).flat().reduce((s,li)=>s+(li.inventoryItem?li.short*li.inventoryItem.cost:0),0).toFixed(2)}</span></div>
-            <div style={{display:"flex",gap:10}}>
+            <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
               <Btn variant="secondary" onClick={()=>setPoModal(null)}>Close</Btn>
-              <Btn onClick={()=>printPO(poModal.wo,poModal.bySupplier)}>Print PO</Btn>
+              <Btn variant="ghost" onClick={()=>printPO(poModal.wo,poModal.bySupplier)}>🖨 Print PO</Btn>
+              <Btn onClick={()=>exportPO(poModal.wo,poModal.bySupplier)}>📥 Export Excel</Btn>
             </div>
           </div>
         </Modal>
