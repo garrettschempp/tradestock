@@ -1346,9 +1346,10 @@ function Settings({geminiKey,setGeminiKey,skuMappings,setSkuMappings,supplierPri
           </div>
         </div>
         <input ref={mapImportRef} type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={importMappings}/>
-        <div style={{display:"flex",gap:10,alignItems:"center"}}>
+        <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
           <Btn onClick={()=>mapImportRef.current.click()}>📥 Import Mapping Excel</Btn>
           <span style={{fontSize:12,color:C.textMuted}}>{skuMappings.length} mappings loaded</span>
+          {skuMappings.length>0&&<Btn variant="danger" small onClick={()=>{if(window.confirm("Clear all "+skuMappings.length+" SKU mappings?")){{setSkuMappings([]);notify("All mappings cleared.",C.red);}}}}>Clear All</Btn>}
         </div>
       </Card>
 
